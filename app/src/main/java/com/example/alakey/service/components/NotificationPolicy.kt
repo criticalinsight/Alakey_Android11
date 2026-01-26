@@ -13,16 +13,17 @@ import androidx.media3.session.MediaStyleNotificationHelper
  * Does not manage playback. Just formats the specific notification style.
  */
 class NotificationPolicy(private val context: Context) {
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class) 
     fun createNotification(
         mediaMetadata: MediaMetadata,
-        sessionToken: androidx.media3.session.SessionToken,
+        session: androidx.media3.session.MediaSession,
         isPlaying: Boolean
     ): Notification {
         return NotificationCompat.Builder(context, "playback_channel")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(mediaMetadata.title)
             .setContentText(mediaMetadata.artist)
-            .setStyle(MediaStyleNotificationHelper.MediaStyle(sessionToken))
+            .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
             .setOngoing(isPlaying)
             .build()
     }

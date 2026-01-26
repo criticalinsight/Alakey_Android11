@@ -7,12 +7,13 @@ This document categorizes system components by their **Utility** (Business Value
 | Component | Utility | Complexity | Responsibility |
 | :--- | :--- | :--- | :--- |
 | **UniversalRepository** | 🔴 Critical | 🔴 High | Single Source of Truth; orchestrates DB, Network, and Proxy logic. |
-| **AppViewModel** | 🔴 Critical | 🟠 Medium | UI State Holder; manages playback controller and user intents. |
+| **AppViewModel** | 🔴 Critical | 🟢 Low | UI State Coordinator; maps Repo and PlaybackClient into UI state. |
+| **PlaybackClient** | 🔴 Critical | 🟠 Medium | MediaController lifecycle, Sleep Timer, and Progress Polling logic. |
 | **AudioService** | 🔴 Critical | 🔴 High | Background Media3 playback; foreground service management. |
 | **GlassSystem** | 🟡 High | 🔴 High | Custom "Flux" rendering engine; shaders, gestures, and glassmorphism. |
 | **RssParser** | 🟡 High | 🟠 Medium | XML parsing logic for podcast feeds; fragile by nature. |
 | **PodcastDao** | 🔴 Critical | 🟢 Low | Data access interface; clean Room abstractions. |
-| **AlakeyUI** | 🟡 High | 🟠 Medium | Top-level Compose layout; navigation and dialog orchestration. |
+| **AlakeyUI** | 🟡 High | 🟠 Medium | Optimized flattened list layout; navigation and dialog orchestration. |
 | **FeedSyncWorker** | 🟠 Medium | 🟢 Low | Background synchronization; pure function of `Repo.syncAll()`. |
 
 ---
@@ -38,8 +39,13 @@ This document categorizes system components by their **Utility** (Business Value
 ### 2. UI Layer (The Appearance)
 *   **`AppViewModel`**
     *   **Utility**: Critical. Bridges the gap between the stateless UI and the stateful Service/Data layers.
-    *   **Complexity**: Medium. Manages multiple flows (`uiState`, `searchResults`, `sleepTimer`).
-    *   **Status**: Good, but starting to accumulate diverse responsibilities (Playback + Search + Timer).
+    *   **Complexity**: Low. Refactored to be a pure coordinator after extracting playback logic.
+    *   **Status**: Excellent. "Simple & Correct".
+
+*   **`PlaybackClient`**
+    *   **Utility**: Critical. Handles the "Complected" nature of Media3 and session management.
+    *   **Complexity**: Medium. Manages `MediaController` lifecycle, Sleep Timer, and Polling.
+    *   **Status**: Healthy. Isolated and decoupled from the UI.
 
 *   **`GlassSystem.kt`** (The Aesthetic Engine)
     *   **Utility**: High (Differentiator). This provides the "Wow" factor.

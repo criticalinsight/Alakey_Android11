@@ -255,4 +255,4 @@ fun GlassPlayerScreen(
 }
 
 
-fun formatMs(ms: Long): String { val s = ms / 1000; return String.format("%d:%02d", s / 60, s % 60) }
+fun formatMs(ms: Long): String { val s = ms / 1000; return String.format(java.util.Locale.US, "%d:%02d", s / 60, s % 60) }

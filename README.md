@@ -22,6 +22,7 @@ The app follows modern Android development best practices:
 - **Model**: Room Database with Reactive Flows.
 - **Playback**: Jetpack Media3 (ExoPlayer) with an integrated `MediaLibraryService`.
 - **DI**: Hilt for robust dependency management.
+- **Deps**: Gradle Version Catalogs (`libs.versions.toml`) for type-safe dependency management.
 
 For more details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

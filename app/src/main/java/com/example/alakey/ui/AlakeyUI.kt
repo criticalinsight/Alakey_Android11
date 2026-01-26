@@ -100,7 +100,7 @@ fun MainContent() {
 
     var showPlayer by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var selectedView by remember { mutableStateOf(0) } // 0 = Library, 1 = Marketplace
+    var selectedView by remember { mutableIntStateOf(0) } // 0 = Library, 1 = Marketplace
 
     BackHandler(showPlayer) { showPlayer = false }
 
@@ -183,6 +183,8 @@ fun MainContent() {
                       }
                   }
 
+                  val expandedGroups = remember { mutableStateListOf<String>() }
+
                   LazyColumn(contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
                       if (filteredPodcasts.isEmpty()) {
                           item { 
@@ -196,21 +198,38 @@ fun MainContent() {
                           }
                       } else {
                           val grouped = if(activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
-                          items(items = grouped.keys.toList(), key = { it }) { title ->
-                              val eps = grouped[title] ?: emptyList()
+                          
+                          grouped.forEach { (title, eps) ->
                               if (eps.isNotEmpty()) {
-                                   GlassFolderRow(
-                                      title = title,
-                                      imageUrl = eps.first().imageUrl,
-                                      episodes = eps,
-                                      onPlay = { vm.play(it); showPlayer = true },
-                                      onDownload = { vm.downloadEpisode(it.id) },
-                                      onUnsubscribe = { vm.unsubscribe(title) },
-                                      onToggleQueue = { 
-                                          if (it.isInQueue) vm.removeFromQueue(it) else vm.addToQueue(it)
+                                  // Header
+                                  item(key = "header_$title") {
+                                      GlassFolderHeader(
+                                          title = title,
+                                          imageUrl = eps.first().imageUrl,
+                                          count = eps.size,
+                                          isExpanded = expandedGroups.contains(title),
+                                          onToggle = { 
+                                              if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
+                                          },
+                                          onUnsubscribe = { vm.unsubscribe(title) }
+                                      )
+                                  }
+                                  
+                                  // Episodes (if expanded)
+                                  if (expandedGroups.contains(title) || activeFilter != "All") {
+                                      items(items = eps, key = { it.id }) { ep ->
+                                          Box(Modifier.padding(start = 16.dp)) {
+                                              GlassPodcastRow(
+                                                  podcast = ep,
+                                                  onClick = { vm.play(ep); showPlayer = true },
+                                                  onDownload = { vm.downloadEpisode(ep.id) },
+                                                  onAddToQueue = { 
+                                                      if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
+                                                  }
+                                              )
+                                          }
                                       }
-                                  )
-                                  Spacer(Modifier.height(8.dp))
+                                  }
                               }
                           }
                       }
@@ -269,7 +288,7 @@ fun AddPodcastDialog(
     searchResults: List<ItunesSearchResult>
 ) {
     var text by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Dialog(onDismissRequest = onDismiss) {
         PrismaticGlass(Modifier.fillMaxWidth().height(400.dp), RoundedCornerShape(24.dp)) {
@@ -318,4 +337,34 @@ fun AddPodcastDialog(
             }
         }
     }
+}
+
+
+class MotionDetector(private val onShake: () -> Unit) : android.hardware.SensorEventListener {
+    private var lastUpdate: Long = 0
+    private var lastX: Float = 0f
+    private var lastY: Float = 0f
+    private var lastZ: Float = 0f
+    private val SHAKE_THRESHOLD = 800
+
+    override fun onSensorChanged(event: android.hardware.SensorEvent?) {
+        if (event == null) return
+        val curTime = System.currentTimeMillis()
+        if ((curTime - lastUpdate) > 100) {
+            val diffTime = (curTime - lastUpdate)
+            lastUpdate = curTime
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
+            val speed = Math.abs(x + y + z - lastX - lastY - lastZ) / diffTime * 10000
+            if (speed > SHAKE_THRESHOLD) {
+                onShake()
+            }
+            lastX = x
+            lastY = y
+            lastZ = z
+        }
+    }
+    
+    override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
 }

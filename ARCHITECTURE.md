@@ -6,11 +6,12 @@ The application follows the modern Android MVVM (Model-View-ViewModel) architect
 ```mermaid
 graph TD
     UI[Jetpack Compose UI] --> VM[AppViewModel]
+    VM --> PC[PlaybackClient]
+    PC --> Media3[Media3 / AudioService]
     VM --> Repo[UniversalRepository]
     Repo --> Room[Room Database]
     Repo --> OkHttp[OkHttp / Networking]
     Repo --> Parser[RssParser]
-    VM --> Media3[Media3 / AudioService]
     Media3 --> Room
     Worker[WorkManager / Sync] --> Repo
 ```
@@ -20,11 +21,13 @@ graph TD
 ### 1. Presentation Layer (UI)
 - **Jetpack Compose**: The entire UI is built with Compose.
 - **Glassmorphism**: Custom UI components (`PrismaticGlass`, `FluxBackground`) provide a premium aesthetic.
+- **Flattened LazyColumn**: The library list is architected as a flattened structure to prevent ANR issues when handling large feeds (3000+ episodes).
 - **State Management**: The UI observes a single `UiState` flow from the `AppViewModel`.
 
 ### 2. Domain/ViewModel Layer
-- **AppViewModel**: Orchestrates the interaction between the UI and the data layer. It manages Media3 `MediaController` and coordinates playback, sleep timers, and search results.
-- **Dependency Injection**: Hilt is used to inject the `UniversalRepository` and other dependencies.
+- **AppViewModel**: Orchestrates the interaction between the UI and the data layer. It maps data from the repository and playback state from the `PlaybackClient` into a consumable `UiState`.
+- **PlaybackClient**: A dedicated component for managing `MediaController` connections, sleep timers, and progress polling. Extracted from the ViewModel to de-complect business logic from session management.
+- **Dependency Injection**: Hilt is used to inject repositories, clients, and other singletons.
 
 ### 3. Data Layer
 - **UniversalRepository**: A singleton repository that acts as the single source of truth.

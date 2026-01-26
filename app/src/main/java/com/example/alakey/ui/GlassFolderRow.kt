@@ -22,63 +22,47 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.material3.Text
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import coil.compose.AsyncImage
 import com.example.alakey.data.PodcastEntity
 
 @Composable
-fun GlassFolderRow(
+fun GlassFolderHeader(
     title: String,
     imageUrl: String,
-    episodes: List<PodcastEntity>,
-    onPlay: (PodcastEntity) -> Unit,
-    onDownload: (PodcastEntity) -> Unit,
-    onUnsubscribe: () -> Unit,
-    onToggleQueue: (PodcastEntity) -> Unit
+    count: Int,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    onUnsubscribe: () -> Unit
 ) {
-    var isExpanded by remember { mutableStateOf(false) }
-
-    Column {
-        PrismaticGlass(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(100.dp)
-                .clickable { isExpanded = !isExpanded },
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier.size(68.dp).clip(RoundedCornerShape(16.dp))
-                )
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        PrismaticGlass(Modifier.fillMaxWidth().height(90.dp).clickable { onToggle() }) {
+            Row(Modifier.fillMaxSize().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(imageUrl, null, Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     NebulaText(title, MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                     Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Folder, null, tint = Color.White.copy(0.5f), modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        NebulaText("${episodes.size} episodes", style = MaterialTheme.typography.bodySmall, glowColor = Color.Transparent)
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = onUnsubscribe, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Rounded.Delete, null, tint = Color.Red.copy(0.7f))
-                        }
-                    }
-                }
-            }
-        }
-
-        AnimatedVisibility(visible = isExpanded) {
-            Column(modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 8.dp)) {
-                episodes.forEach { episode ->
-                    GlassPodcastRow(
-                        podcast = episode, 
-                        onClick = { onPlay(episode) }, 
-                        onDownload = { onDownload(episode) },
-                        onAddToQueue = { onToggleQueue(episode) }
+                    Text(
+                        if (isExpanded) "Tap to collapse" else "$count episodes",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(0.6f)
                     )
+                }
+                Icon(
+                     if (isExpanded) androidx.compose.material.icons.Icons.Rounded.KeyboardArrowUp else androidx.compose.material.icons.Icons.Rounded.KeyboardArrowDown,
+                     null,
+                     tint = Color.Cyan
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onUnsubscribe) {
+                     Icon(androidx.compose.material.icons.Icons.Rounded.Delete, null, tint = Color.Red.copy(0.6f))
                 }
             }
         }

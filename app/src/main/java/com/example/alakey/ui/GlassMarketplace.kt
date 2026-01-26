@@ -23,7 +23,7 @@ data class MarketItem(val title: String, val author: String, val type: String, v
 fun GlassMarketplace(
     onSubscribe: (String) -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Kenya, 1 = USA
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Kenya, 1 = USA
     
     val kenyaItems = listOf(
         MarketItem("The 97s Podcast", "3MenArmy", "Podcast", "The 97s Podcast"),

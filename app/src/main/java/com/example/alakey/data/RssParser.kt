@@ -26,7 +26,9 @@ object RssParser {
     private fun readFeed(parser: XmlPullParser, feedUrl: String): List<PodcastEntity> {
         val entries = mutableListOf<PodcastEntity>()
         var eventType = parser.eventType
-        
+        // Store channel title
+        var channelTitle = "Podcast" 
+
         // Fast-forward to root
         while (eventType != XmlPullParser.START_TAG && eventType != XmlPullParser.END_DOCUMENT) {
             eventType = parser.next()
@@ -35,14 +37,19 @@ object RssParser {
         if (eventType == XmlPullParser.END_DOCUMENT) return emptyList()
 
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
-            if (parser.eventType == XmlPullParser.START_TAG && (parser.name == "item" || parser.name == "entry")) {
-                readEntry(parser, feedUrl)?.let { entries.add(it) }
+            if (parser.eventType == XmlPullParser.START_TAG) {
+                if (parser.name == "title" && channelTitle == "Podcast") {
+                     // Only read the first title as channel title (channel struct usually comes before items)
+                     channelTitle = readText(parser)
+                } else if (parser.name == "item" || parser.name == "entry") {
+                    readEntry(parser, feedUrl, channelTitle)?.let { entries.add(it) }
+                }
             }
         }
         return entries
     }
 
-    private fun readEntry(parser: XmlPullParser, feedUrl: String): PodcastEntity? {
+    private fun readEntry(parser: XmlPullParser, feedUrl: String, channelTitle: String): PodcastEntity? {
         var title = ""
         var description = ""
         var link = ""
@@ -74,7 +81,7 @@ object RssParser {
 
         return PodcastEntity(
             id = id,
-            title = "Podcast", // Feed title would be passed down in a recursive parser, keeping it simple here
+            title = channelTitle, 
             episodeTitle = title,
             description = cleanDesc,
             imageUrl = imageUrl,

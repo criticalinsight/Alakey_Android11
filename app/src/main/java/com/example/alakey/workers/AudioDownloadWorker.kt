@@ -26,8 +26,6 @@ class AudioDownloadWorker @AssistedInject constructor(
             Log.e("AudioDownloadWorker", "Error downloading audio", e)
             Result.failure()
         }
-            Result.failure()
-        }
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {

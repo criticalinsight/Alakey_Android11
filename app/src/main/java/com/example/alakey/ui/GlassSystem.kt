@@ -108,18 +108,20 @@ fun Modifier.inertialTilt(maxRotation: Float = 12f) = composed {
 @Composable
 fun PrismaticGlass(modifier: Modifier = Modifier, shape: RoundedCornerShape = RoundedCornerShape(24.dp), content: @Composable BoxScope.() -> Unit) {
     val density = LocalDensity.current
-    Box(modifier.clip(shape).background(Color.White.copy(alpha = 0.04f)).drawWithCache {
+    Box(modifier.clip(shape).background(Color.White.copy(alpha = 0.05f)).drawWithCache {
         val path = Path().apply { addRoundRect(RoundRect(size.toRect(), CornerRadius(shape.topStart.toPx(size, density)))) }
-        val spectrum = Brush.sweepGradient(listOf(Color.Cyan.copy(0.4f), Color.Magenta.copy(0.4f), Color.Yellow.copy(0.4f), Color.Cyan.copy(0.4f)))
-        onDrawWithContent { drawContent(); drawPath(path, spectrum, style = Stroke(width = 1.dp.toPx())) }
+        val spectrum = Brush.sweepGradient(listOf(Color.Cyan.copy(0.6f), Color(0xFFBD00FF).copy(0.6f), Color.Yellow.copy(0.4f), Color.Cyan.copy(0.6f)))
+        onDrawWithContent { drawContent(); drawPath(path, spectrum, style = Stroke(width = 1.2.dp.toPx())) }
     }, content = content)
 }
 
 @Composable
 fun NebulaText(text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, glowColor: Color = Color.Cyan) {
     Box(modifier) {
-        if (Build.VERSION.SDK_INT >= 31) { androidx.compose.material3.Text(text = text, style = style, color = glowColor.copy(0.6f), modifier = Modifier.graphicsLayer { renderEffect = RenderEffect.createBlurEffect(16f, 16f, Shader.TileMode.DECAL).asComposeRenderEffect() }) }
-        androidx.compose.material3.Text(text = text, style = style, color = Color.White.copy(0.95f))
+        if (Build.VERSION.SDK_INT >= 31) { 
+            androidx.compose.material3.Text(text = text, style = style, color = glowColor.copy(0.8f), modifier = Modifier.graphicsLayer { renderEffect = RenderEffect.createBlurEffect(20f, 20f, Shader.TileMode.DECAL).asComposeRenderEffect() }) 
+        }
+        androidx.compose.material3.Text(text = text, style = style, color = Color.White.copy(0.98f))
     }
 }
 

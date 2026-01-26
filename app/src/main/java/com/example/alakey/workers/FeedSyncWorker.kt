@@ -1,0 +1,33 @@
+package com.example.alakey.workers
+
+import android.content.Context
+import androidx.hilt.work.HiltWorker
+import androidx.work.*
+import com.example.alakey.data.UniversalRepository
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import java.util.concurrent.TimeUnit
+
+@HiltWorker
+class FeedSyncWorker @AssistedInject constructor(
+    @Assisted c: Context,
+    @Assisted p: WorkerParameters,
+    private val repo: UniversalRepository
+) : CoroutineWorker(c, p) {
+    override suspend fun doWork(): Result = try {
+        repo.syncAll()
+        Result.success()
+    } catch (e: Exception) {
+        Result.retry()
+    }
+
+    companion object {
+        fun schedule(c: Context) {
+            WorkManager.getInstance(c).enqueueUniquePeriodicWork(
+                "sync",
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<FeedSyncWorker>(3, TimeUnit.HOURS).build()
+            )
+        }
+    }
+}

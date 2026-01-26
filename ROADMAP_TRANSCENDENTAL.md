@@ -31,6 +31,30 @@ API 36 enforces privacy. We embrace this not as a constraint, but as a simplific
 *   **Action**: Fully adopt the **Photo Picker** for any future cover-art customization (Zero Permissions).
 *   **Action**: Use **Predictive Back** (API 36) to model navigation as a reversible pure function.
 
+## 5. Simplicity by Removal (Deleting RssParser)
+**Principle**: *Complexity is cost. Fragility is failure.*
+The current `RssParser` is a custom, fragile state machine. It is "complected" with the specifics of XML.
+
+*   **Action**: **DELETE** `RssParser`.
+*   **Strategy**: Replace with a rigorous, standard library (like ROME or a focused version of XmlPullParser wrapped in a function) that returns immutable Records directly.
+*   **Goal**: The "Parser" should not exist as a component; parsing should be a pure function: `String -> List<PodcastEntity>`.
+
+## 6. De-complecting Components (Rich Hickey Protocol)
+**Principle**: *Separate Policy from Mechanism.*
+
+### AudioService (The Engine)
+*   **Current State**: Complected. Mixes foreground service notification logic, media session handling, and playback state.
+*   **Future**: Decompose into:
+    *   `NotificationPolicy` (Pure logic: State -> Notification)
+    *   `PlaybackMechanism` (ExoPlayer wrapper)
+    *   `SessionManager` (Media3 glue)
+
+### GlassSystem (The View)
+*   **Current State**: Complected. Mixes rendering (Shaders) with physics (Gestures).
+*   **Future**:
+    *   Treat `GlassSystem` as a pure projection of `UiState`.
+    *   Gestures produce `Events`, they do not mutate View State directly.
+
 ## 5. Tangible Liveness ("Flux")
 **Principle**: *The system should look like it works.*
 Rich Hickey values "Completeness". In UI, this means the feedback loop is complete. New API 36 graphics capabilities (if available) or Canvas 2D updates will be used to make the "Flux" background reactive to audio amplitude.

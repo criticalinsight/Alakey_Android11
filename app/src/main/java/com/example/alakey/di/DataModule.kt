@@ -23,4 +23,7 @@ object DataModule {
 
     @Provides
     fun provideDao(db: AppDatabase): PodcastDao = db.dao()
+
+    @Provides
+    fun provideEventLogDao(db: AppDatabase): com.example.alakey.data.EventLogDao = db.eventLogDao()
 }

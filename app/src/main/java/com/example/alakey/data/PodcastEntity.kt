@@ -3,6 +3,10 @@ package com.example.alakey.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/**
+ * Immutable value type representing a Podcast Episode at a specific point in time.
+ * "State is a value." — Rich Hickey
+ */
 @Entity(tableName = "podcasts")
 data class PodcastEntity(
     @PrimaryKey val id: String,

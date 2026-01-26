@@ -18,14 +18,19 @@ import javax.inject.Singleton
 @Singleton
 class UniversalRepository @Inject constructor(
     private val dao: PodcastDao,
+    private val eventLogDao: EventLogDao,
     @ApplicationContext private val context: Context
 ) {
     val library = dao.getAllPodcasts()
     val queue = dao.getQueue()
     private val client = OkHttpClient()
 
+    // Java 25 / Loom readiness: This dispatcher should eventually act on Virtual Threads.
+    // val LoomDispatcher = Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
+    private val ioDispatcher = Dispatchers.IO 
+
     private suspend fun <T> safeApiCall(retries: Int = 3, initialDelay: Long = 2000, apiCall: suspend () -> T): Result<T> {
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             var currentDelay = initialDelay
             repeat(retries - 1) {
                 try {
@@ -80,6 +85,7 @@ class UniversalRepository @Inject constructor(
         val items = RssParser.parse(xmlContent, url)
         if (items.isNotEmpty()) {
             dao.insertEpisodes(items)
+            eventLogDao.logEvent(EventLogEntity(type = "SUBSCRIBE_SUCCESS", payload = url, status = "COMPLETED", timestamp = System.currentTimeMillis()))
             Log.d("UniversalRepository", "Successfully subscribed to $url, ${items.size} items found.")
             true
         } else {

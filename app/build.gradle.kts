@@ -7,25 +7,25 @@ plugins {
 
 android {
     namespace = "com.example.alakey"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.alakey"
-        minSdk = 30
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        minSdk = 30 
+        targetSdk = 36
+        versionCode = 2
+        versionName = "1.1.0"
     }
     
     buildFeatures { compose = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.10" }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "25"
     }
 }
 

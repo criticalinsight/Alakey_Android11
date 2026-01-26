@@ -12,3 +12,9 @@ app/google-services.json
 /captures
 .externalNativeBuild
 .cxx
+
+# Sly Agent Data
+.sly/
+
+# Environment Variables
+.env

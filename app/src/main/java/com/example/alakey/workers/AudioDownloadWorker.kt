@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.example.alakey.data.UniversalRepository
 import dagger.assisted.Assisted
@@ -25,5 +26,17 @@ class AudioDownloadWorker @AssistedInject constructor(
             Log.e("AudioDownloadWorker", "Error downloading audio", e)
             Result.failure()
         }
+            Result.failure()
+        }
+    }
+
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return ForegroundInfo(
+            1, 
+            androidx.core.app.NotificationCompat.Builder(applicationContext, "download_channel")
+                .setContentTitle("Downloading Episode")
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .build()
+        )
     }
 }

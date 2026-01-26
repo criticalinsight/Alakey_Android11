@@ -93,7 +93,8 @@ fun MainContent() {
             addAction(Intent.ACTION_HEADSET_PLUG)
             addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
         }
-        context.registerReceiver(receiver, filter)
+        val flags = if (Build.VERSION.SDK_INT >= 33) ContextCompat.RECEIVER_NOT_EXPORTED else 0
+        ContextCompat.registerReceiver(context, receiver, filter, flags)
         onDispose { context.unregisterReceiver(receiver) }
     }
 

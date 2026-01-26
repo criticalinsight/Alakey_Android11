@@ -7,8 +7,8 @@
 - [x] Add `CONTRIBUTING.md`
 
 ## Infrastructure
-- [ ] Configure `sly` for autonomous learning
-- [ ] Set up CI/CD for Android builds
+- [x] Configure `sly` for autonomous learning
+- [x] Set up CI/CD for Android builds
 
 ## Feature Roadmap
 - [ ] Implement Smart Queue sorting

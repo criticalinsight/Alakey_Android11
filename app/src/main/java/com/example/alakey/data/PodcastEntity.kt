@@ -22,7 +22,12 @@ data class PodcastEntity(
     val isInQueue: Boolean = false,
     val queueOrder: Long = 0,
     val progress: Long = 0,
-    val lastPlayed: Long = 0
+    val lastPlayed: Long = 0,
+    val chapters: List<Chapter> = emptyList(),
+    val palette: PodcastPalette? = null,
+    val season: Int = 0,
+    val episodeType: String = "full",
+    val downloadPolicy: String = "latest"
 )
 
 data class ItunesSearchResult(val collectionName: String, val feedUrl: String, val artworkUrl100: String)

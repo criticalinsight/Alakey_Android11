@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.alakey.data.ItunesSearchResult
 import com.example.alakey.data.PodcastEntity
+import com.example.alakey.data.PodcastPalette
 import com.example.alakey.data.UniversalRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -15,6 +16,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
+import androidx.palette.graphics.Palette
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import androidx.compose.ui.graphics.toArgb
+import android.graphics.Color as AndroidColor
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
@@ -30,7 +39,10 @@ class AppViewModel @Inject constructor(
         val currentTime: Long = 0,
         val duration: Long = 1,
         val speed: Float = 1.0f,
-        val queue: List<PodcastEntity> = emptyList()
+        val queue: List<PodcastEntity> = emptyList(),
+        val inbox: List<PodcastEntity> = emptyList(),
+        val amplitude: Float = 0f,
+        val dominantColor: Int = AndroidColor.CYAN
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -63,10 +75,16 @@ class AppViewModel @Inject constructor(
             }
         }
 
-        // Hydrate Queue
+        // Hydrate Queue and Inbox
         viewModelScope.launch {
             repo.queue.collect { queue ->
                 _uiState.update { it.copy(queue = queue) }
+            }
+        }
+        
+        viewModelScope.launch {
+            repo.inbox.collect { inbox ->
+                _uiState.update { it.copy(inbox = inbox) }
             }
         }
         
@@ -80,8 +98,14 @@ class AppViewModel @Inject constructor(
                         isPlaying = pbState.isPlaying,
                         currentTime = pbState.currentPosition,
                         duration = pbState.duration,
-                        speed = pbState.playbackSpeed
+                        speed = pbState.playbackSpeed,
+                        amplitude = pbState.amplitude
                     )
+                }
+                
+                // Extract color if current artwork changed
+                if (podcast != null && podcast.imageUrl != _uiState.value.current?.imageUrl) {
+                    extractColor(podcast.imageUrl)
                 }
                 
                 // Update DB with progress
@@ -97,10 +121,8 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch { _userEvents.emit(event) }
     }
 
-    fun connect(ctx: Context) {
+    fun connect() {
         // No-op: Client connects on init. 
-        // Keeping method signature for now to avoid breaking Activity call sites immediately, 
-        // though ideally Activity should not need to call this.
     }
 
     fun startSleepTimer(minutes: Int = 45) {
@@ -120,11 +142,7 @@ class AppViewModel @Inject constructor(
 
     fun checkForAutoDownloads() {
         viewModelScope.launch {
-            val podcasts = repo.library.first()
-            if (podcasts.isNotEmpty()) {
-                val latestEpisode = podcasts.first()
-                repo.downloadAudio(latestEpisode.id)
-            }
+            repo.runSmartDownloads()
         }
     }
 
@@ -211,5 +229,90 @@ class AppViewModel @Inject constructor(
     
     fun resumePlayback() {
         playbackClient.resume()
+    }
+
+    private fun extractColor(url: String) {
+        viewModelScope.launch {
+            val currentPodcast = _uiState.value.current
+            
+            // 1. Data-First: Check if we already have the fact stored
+            if (currentPodcast != null && currentPodcast.palette != null && currentPodcast.imageUrl == url) {
+                _uiState.update { it.copy(dominantColor = currentPodcast.palette.dominant) }
+                return@launch
+            }
+
+            // 2. Intelligence: Extract context from raw bits
+            try {
+                val loader = ImageLoader(context)
+                val request = ImageRequest.Builder(context)
+                    .data(url)
+                    .allowHardware(false) // Required for Palette
+                    .build()
+                
+                val result = loader.execute(request)
+                if (result is SuccessResult) {
+                    val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+                    if (bitmap != null) {
+                        val palette = Palette.from(bitmap).generate()
+                        val dominant = palette.getDominantColor(AndroidColor.CYAN)
+                        val vibrant = palette.getVibrantColor(AndroidColor.CYAN)
+                        val muted = palette.getMutedColor(AndroidColor.GRAY)
+                        
+                        // Update UI
+                        _uiState.update { it.copy(dominantColor = vibrant) }
+                        
+                        // 3. Persistence: Write the fact back to the ledger
+                        if (currentPodcast != null) {
+                            repo.savePalette(currentPodcast.id, PodcastPalette(dominant, vibrant, muted))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Color extraction failed", e)
+            }
+        }
+    }
+
+    fun playRadio() {
+        viewModelScope.launch {
+            val candidate = repo.getRadioCandidate()
+            if (candidate != null) {
+                repo.addToQueue(candidate.id)
+                play(candidate)
+                emitEvent(UserEvent.ShowMessage("Radio: Now playing ${candidate.episodeTitle}"))
+            } else {
+                emitEvent(UserEvent.ShowError("Radio silence. No unplayed episodes found."))
+            }
+        }
+    }
+    
+    fun markPlayed(p: PodcastEntity) {
+        viewModelScope.launch {
+            repo.markPlayed(p)
+            emitEvent(UserEvent.ShowMessage("Marked as played"))
+        }
+    }
+
+    fun markOlderPlayed(p: PodcastEntity) {
+        viewModelScope.launch {
+            repo.markOlderAsPlayed(p)
+            emitEvent(UserEvent.ShowMessage("Archived older episodes"))
+        }
+    }
+
+    fun deleteDownload(p: PodcastEntity) {
+        viewModelScope.launch {
+            repo.deleteDownload(p.id)
+            emitEvent(UserEvent.ShowMessage("Download deleted"))
+        }
+    }
+    
+    fun playNext(p: PodcastEntity) {
+        viewModelScope.launch {
+            repo.addToQueue(p.id) // Currently adds to end. 
+            // TODO: Implement "Add to Top" in Dao if strict "Play Next" needed.
+            // For now, "Add to Queue" is sufficient context.
+            emitEvent(UserEvent.ShowMessage("Added to queue"))
+        }
     }
 }

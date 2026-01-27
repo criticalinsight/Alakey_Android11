@@ -49,4 +49,22 @@ interface PodcastDao {
 
     @Query("SELECT * FROM podcasts ORDER BY lastPlayed DESC LIMIT 1")
     suspend fun getLastPlayedPodcast(): PodcastEntity?
+
+    @Query("UPDATE podcasts SET palette = :palette WHERE id = :id")
+    suspend fun updatePalette(id: String, palette: PodcastPalette)
+
+    @Query("SELECT * FROM podcasts WHERE isInQueue = 0 AND progress = 0 ORDER BY pubDate DESC")
+    fun getInbox(): Flow<List<PodcastEntity>>
+
+    @Query("SELECT * FROM podcasts WHERE isInQueue = 0 AND progress = 0 ORDER BY RANDOM() LIMIT 1")
+    suspend fun getRadioCandidate(): PodcastEntity?
+
+    @Query("UPDATE podcasts SET progress = duration, lastPlayed = :timestamp, isInQueue = 0 WHERE id = :id")
+    suspend fun markAsPlayed(id: String, timestamp: Long)
+
+    @Query("UPDATE podcasts SET progress = duration, lastPlayed = :timestamp, isInQueue = 0 WHERE id IN (:ids)")
+    suspend fun markAsPlayedBatch(ids: List<String>, timestamp: Long)
+
+    @Query("UPDATE podcasts SET isDownloaded = :isDownloaded, audioUrl = '' WHERE id = :id")
+    suspend fun setDownloaded(id: String, isDownloaded: Boolean)
 }

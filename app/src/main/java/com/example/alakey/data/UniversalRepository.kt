@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -22,6 +23,7 @@ class UniversalRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     val library = dao.getAllPodcasts()
+    val inbox = dao.getInbox()
     val queue = dao.getQueue()
     private val client = OkHttpClient()
 
@@ -118,6 +120,21 @@ class UniversalRepository @Inject constructor(
         client.newCall(request).execute().body!!.string()
     }
 
+    suspend fun runSmartDownloads() {
+        withContext(Dispatchers.IO) {
+            val library: List<PodcastEntity> = dao.getAllPodcasts().first()
+            val candidates = com.example.alakey.domain.PureLogic.determineDownloadCandidates(library)
+            
+            candidates.forEach { id ->
+                try {
+                    downloadAudio(id)
+                } catch (e: Exception) {
+                    Log.e("UniversalRepository", "Smart Download failed for $id", e)
+                }
+            }
+        }
+    }
+
     suspend fun downloadAudio(podcastId: String): Result<String> = safeApiCall {
          val podcast = dao.getPodcastById(podcastId) ?: throw Exception("Podcast not found")
          if (podcast.audioUrl.isEmpty()) throw Exception("No audio URL")
@@ -149,5 +166,33 @@ class UniversalRepository @Inject constructor(
     suspend fun addToQueue(id: String) = dao.addToQueue(id, System.currentTimeMillis())
     suspend fun removeFromQueue(id: String) = dao.removeFromQueue(id)
     suspend fun getLastPlayedPodcast(): PodcastEntity? = dao.getLastPlayedPodcast()
+    suspend fun getRadioCandidate(): PodcastEntity? = dao.getRadioCandidate()
     suspend fun saveProgress(id: String, progress: Long) = dao.updateProgress(id, progress, System.currentTimeMillis())
+    suspend fun savePalette(id: String, palette: PodcastPalette) = dao.updatePalette(id, palette)
+
+    suspend fun markPlayed(p: PodcastEntity) {
+        dao.markAsPlayed(p.id, System.currentTimeMillis())
+    }
+
+    suspend fun deleteDownload(id: String) {
+        withContext(Dispatchers.IO) {
+            val p = dao.getPodcastById(id) ?: return@withContext
+            if (p.isDownloaded && p.audioUrl.isNotEmpty()) {
+                val file = File(p.audioUrl)
+                if (file.exists()) file.delete()
+            }
+            dao.setDownloaded(id, false)
+        }
+    }
+
+    suspend fun markOlderAsPlayed(ref: PodcastEntity) {
+        withContext(Dispatchers.IO) {
+            val episodes = dao.getEpisodesByTitle(ref.title)
+            val toMark = com.example.alakey.domain.PureLogic.determineArchiveCandidates(ref, episodes)
+
+            if (toMark.isNotEmpty()) {
+                dao.markAsPlayedBatch(toMark, System.currentTimeMillis())
+            }
+        }
+    }
 }

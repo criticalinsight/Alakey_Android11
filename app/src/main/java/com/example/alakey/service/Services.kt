@@ -27,19 +27,17 @@ import java.util.concurrent.Executors
 class AudioService : MediaLibraryService() {
     private var player: ExoPlayer? = null
     private var session: MediaLibrarySession? = null
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var sleepJob: Job? = null
     private var loudnessEnhancer: android.media.audiofx.LoudnessEnhancer? = null
+    
+    // De-complected: Sleep Timer logic moved to PlaybackClient (Pure Logic Event Stream)
+    // We keep the service as a humble shell for the Player instance.
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         val attr = AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).setUsage(C.USAGE_MEDIA).build()
-        // Silence skipping is already enabled via setSkipSilenceEnabled(true)
         player = ExoPlayer.Builder(this).setAudioAttributes(attr, true).setHandleAudioBecomingNoisy(true).setSkipSilenceEnabled(true).build()
 
-        // Audio Normalization / Clear Vocals (LoudnessEnhancer)
-        // Boosting by 200mB (2dB) as a default normalization/boost
         try {
             loudnessEnhancer = android.media.audiofx.LoudnessEnhancer(player!!.audioSessionId)
             loudnessEnhancer?.setTargetGain(200)
@@ -53,25 +51,11 @@ class AudioService : MediaLibraryService() {
             .build()
     }
 
-    private fun startSleepTimer(minutes: Int) {
-        sleepJob?.cancel()
-        sleepJob = scope.launch {
-            val totalMillis = minutes * 60 * 1000L
-            if (totalMillis > 10000) {
-                delay(totalMillis - 10000)
-                player?.let { p -> val startVol = p.volume; for (i in 10 downTo 0) { if (!isActive) return@launch; p.volume = startVol * (i / 10f); delay(1000) } }
-            } else { delay(totalMillis) }
-            player?.pause(); player?.volume = 1.0f
-        }
-    }
-
     override fun onGetSession(info: MediaSession.ControllerInfo) = session
     override fun onDestroy() { 
         session?.release()
         player?.release()
         loudnessEnhancer?.release()
-        sleepJob?.cancel()
-        scope.cancel()
         super.onDestroy() 
     }
 }

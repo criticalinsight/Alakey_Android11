@@ -56,6 +56,8 @@ object RssParser {
         var audioUrl = ""
         var imageUrl = ""
         var pubDate = ""
+        var season = 0
+        var episodeType = "full"
 
         while (parser.next() != XmlPullParser.END_TAG) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
@@ -66,6 +68,8 @@ object RssParser {
                 "enclosure" -> audioUrl = parser.getAttributeValue(null, "url") ?: ""
                 "itunes:image" -> imageUrl = parser.getAttributeValue(null, "href") ?: ""
                 "pubDate", "published" -> pubDate = readText(parser)
+                "itunes:season" -> season = readText(parser).toIntOrNull() ?: 0
+                "itunes:episodeType" -> episodeType = readText(parser)
                 else -> skip(parser)
             }
         }
@@ -87,7 +91,9 @@ object RssParser {
             imageUrl = imageUrl,
             audioUrl = audioUrl,
             feedUrl = feedUrl,
-            pubDate = pubDate
+            pubDate = pubDate,
+            season = season,
+            episodeType = episodeType
         )
     }
 

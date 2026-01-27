@@ -4,7 +4,7 @@ Alakey is a premium, modern podcast application for Android featuring a rich "gl
 
 ![Alakey UI Concept](https://img.shields.io/badge/UI-Jetpack_Compose-blue?style=for-the-badge)
 ![Android](https://img.shields.io/badge/Platform-Android_11%2B-green?style=for-the-badge)
-![Architecture](https://img.shields.io/badge/Architecture-MVVM-orange?style=for-the-badge)
+![Architecture](https://img.shields.io/badge/Architecture-Decomplected-purple?style=for-the-badge)
 
 ## ✨ Key Features
 
@@ -18,9 +18,10 @@ Alakey is a premium, modern podcast application for Android featuring a rich "gl
 ## 🏗️ Architecture
 
 The app follows modern Android development best practices:
-- **View**: Jetpack Compose with custom "Flux" design tokens.
-- **Model**: Room Database with Reactive Flows.
-- **Playback**: Jetpack Media3 (ExoPlayer) with an integrated `MediaLibraryService`.
+- **View**: Jetpack Compose with **Spec-Driven Components** (Pure Functional UI).
+- **Model**: Room Database with **Epochal Time** (Event Sourcing).
+- **Logic**: Pure Logic implementations (De-complected from IO).
+- **Playback**: Jetpack Media3 (ExoPlayer) wrapper service.
 - **DI**: Hilt for robust dependency management.
 - **Deps**: Gradle Version Catalogs (`libs.versions.toml`) for type-safe dependency management.
 

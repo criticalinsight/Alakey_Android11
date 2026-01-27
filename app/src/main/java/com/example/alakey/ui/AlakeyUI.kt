@@ -27,6 +27,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -71,7 +75,7 @@ fun MainContent() {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        vm.connect(context)
+        vm.connect()
         vm.checkForAutoDownloads()
         vm.userEvents.collect { event ->
             when (event) {
@@ -100,6 +104,7 @@ fun MainContent() {
 
     var showPlayer by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var isCarMode by remember { mutableStateOf(false) }
     var selectedView by remember { mutableIntStateOf(0) } // 0 = Library, 1 = Marketplace
 
     BackHandler(showPlayer) { showPlayer = false }
@@ -126,27 +131,56 @@ fun MainContent() {
                        Modifier
                            .clip(RoundedCornerShape(8.dp))
                            .background(if (selectedView == 0) Color.Cyan.copy(0.3f) else Color.Transparent)
+                           .pressScale()
                            .clickable { selectedView = 0 }
                            .padding(horizontal = 16.dp, vertical = 8.dp)
                    ) {
-                       Text("Library", color = Color.White, fontWeight = FontWeight.Bold)
-                   }
-                   Box(
+                        Text("Library", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (selectedView == 2) Color.Cyan.copy(0.3f) else Color.Transparent)
+                            .pressScale()
+                            .clickable { selectedView = 2 } // Inbox logic
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text("Inbox", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                    Box(
                        Modifier
                            .clip(RoundedCornerShape(8.dp))
                            .background(if (selectedView == 1) Color.Cyan.copy(0.3f) else Color.Transparent)
+                           .pressScale()
                            .clickable { selectedView = 1 }
                            .padding(horizontal = 16.dp, vertical = 8.dp)
                    ) {
                        Text("Marketplace", color = Color.White, fontWeight = FontWeight.Bold)
                    }
-               }
-               
-               Row {
-                   IconButton(onClick = { showAddDialog = true }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape)) { 
-                       Icon(Icons.Rounded.Add, null, tint = Color.White) 
-                   }
-               }
+                }
+                
+                // Radio FAB
+                Box(
+                    Modifier
+                        .padding(start = 16.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF0055FF))))
+                        .pressScale()
+                        .clickable { vm.playRadio() }
+                        .padding(12.dp)
+                ) {
+                    Icon(Icons.Rounded.Radio, null, tint = Color.White)
+                }
+                
+                Row {
+                    IconButton(onClick = { isCarMode = true }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape).pressScale()) {
+                        Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { showAddDialog = true }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape).pressScale()) { 
+                        Icon(Icons.Rounded.Add, null, tint = Color.White) 
+                    }
+                }
            }
            
            if (selectedView == 0) {
@@ -156,7 +190,7 @@ fun MainContent() {
                   Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                       filters.forEach { f ->
                           val isActive = activeFilter == f
-                          Box(Modifier.clip(RoundedCornerShape(50)).background(if(isActive) Color(0xFF00F0FF).copy(0.3f) else Color.White.copy(0.1f)).clickable { activeFilter = f }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                          Box(Modifier.clip(RoundedCornerShape(50)).background(if(isActive) Color(0xFF00F0FF).copy(0.3f) else Color.White.copy(0.1f)).pressScale().clickable { activeFilter = f }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                               Text(f, color = if(isActive) Color(0xFF00F0FF) else Color.White.copy(0.7f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
                           }
                       }
@@ -184,52 +218,114 @@ fun MainContent() {
                   }
 
                   val expandedGroups = remember { mutableStateListOf<String>() }
-
-                  LazyColumn(contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
-                      if (filteredPodcasts.isEmpty()) {
-                          item { 
-                              Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
-                                  Column(horizontalAlignment = Alignment.CenterHorizontally) { 
-                                      Icon(Icons.Rounded.FilterListOff, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
-                                      Spacer(Modifier.height(16.dp))
-                                      NebulaText("No episodes found", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
+                  
+                  AnimatedContent(
+                      targetState = activeFilter,
+                      transitionSpec = {
+                          (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
+                      },
+                      label = "filter_transition",
+                      modifier = Modifier.weight(1f)
+                  ) { _ ->
+                      LazyColumn(contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
+                          if (filteredPodcasts.isEmpty()) {
+                              item { 
+                                  Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
+                                      Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                                          Icon(Icons.Rounded.FilterListOff, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
+                                          Spacer(Modifier.height(16.dp))
+                                          NebulaText("No episodes found", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
+                                      } 
                                   } 
-                              } 
-                          }
-                      } else {
-                          val grouped = if(activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
-                          
-                          grouped.forEach { (title, eps) ->
-                              if (eps.isNotEmpty()) {
-                                  // Header
-                                  item(key = "header_$title") {
-                                      GlassFolderHeader(
-                                          title = title,
-                                          imageUrl = eps.first().imageUrl,
-                                          count = eps.size,
-                                          isExpanded = expandedGroups.contains(title),
-                                          onToggle = { 
-                                              if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
-                                          },
-                                          onUnsubscribe = { vm.unsubscribe(title) }
-                                      )
-                                  }
-                                  
-                                  // Episodes (if expanded)
-                                  if (expandedGroups.contains(title) || activeFilter != "All") {
-                                      items(items = eps, key = { it.id }) { ep ->
-                                          Box(Modifier.padding(start = 16.dp)) {
-                                              GlassPodcastRow(
-                                                  podcast = ep,
-                                                  onClick = { vm.play(ep); showPlayer = true },
-                                                  onDownload = { vm.downloadEpisode(ep.id) },
-                                                  onAddToQueue = { 
-                                                      if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
-                                                  }
-                                              )
+                              }
+                          } else {
+                              val grouped = if(activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
+                              
+                              grouped.forEach { (title, eps) ->
+                                  if (eps.isNotEmpty()) {
+                                      // Header
+                                      item(key = "header_$title") {
+                                          GlassFolderHeader(
+                                              title = title,
+                                              imageUrl = eps.first().imageUrl,
+                                              count = eps.size,
+                                              isExpanded = expandedGroups.contains(title),
+                                              onToggle = { 
+                                                  if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
+                                              },
+                                              onUnsubscribe = { vm.unsubscribe(title) }
+                                          )
+                                      }
+                                      
+                                      // Episodes (if expanded)
+                                      if (expandedGroups.contains(title) || activeFilter != "All") {
+                                          items(items = eps, key = { it.id }) { ep ->
+                                              Box(Modifier.padding(start = 16.dp)) {
+                                                  GlassPodcastRow(
+                                                      spec = PodcastRowSpec(
+                                                          id = ep.id,
+                                                          title = ep.episodeTitle,
+                                                          subtitle = ep.title,
+                                                          imageUrl = ep.imageUrl,
+                                                          isDownloaded = ep.isDownloaded,
+                                                          isInQueue = ep.isInQueue,
+                                                          progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
+                                                      ),
+                                                      onClick = { vm.play(ep); showPlayer = true },
+                                                      onDownload = { vm.downloadEpisode(ep.id) },
+                                                      onAddToQueue = { 
+                                                          if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
+                                                      },
+                                                      onMarkPlayed = { vm.markPlayed(ep) },
+                                                      onArchiveOlder = { vm.markOlderPlayed(ep) },
+                                                      onDeleteDownload = { vm.deleteDownload(ep) },
+                                                      onPlayNext = { vm.playNext(ep) }
+                                                  )
+                                              }
                                           }
                                       }
                                   }
+                              }
+                          }
+                      }
+                  }
+           } else if (selectedView == 2) {
+                  // INBOX VIEW
+                  val inbox = state.inbox
+                  LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
+                      if (inbox.isEmpty()) {
+                           item { 
+                               Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
+                                   Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                                       Icon(Icons.Rounded.Inbox, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
+                                       Spacer(Modifier.height(16.dp))
+                                       NebulaText("All caught up!", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
+                                   } 
+                               } 
+                           }
+                      } else {
+                          items(items = inbox, key = { it.id }) { ep ->
+                              Box(Modifier.padding(bottom=8.dp)) {
+                                  GlassPodcastRow(
+                                      spec = PodcastRowSpec(
+                                          id = ep.id,
+                                          title = ep.episodeTitle,
+                                          subtitle = ep.title,
+                                          imageUrl = ep.imageUrl,
+                                          isDownloaded = ep.isDownloaded,
+                                          isInQueue = ep.isInQueue,
+                                          progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
+                                      ),
+                                      onClick = { vm.play(ep); showPlayer = true },
+                                      onDownload = { vm.downloadEpisode(ep.id) },
+                                      onAddToQueue = { 
+                                          vm.addToQueue(ep) 
+                                      },
+                                      onMarkPlayed = { vm.markPlayed(ep) },
+                                      onArchiveOlder = { vm.markOlderPlayed(ep) },
+                                      onDeleteDownload = { vm.deleteDownload(ep) },
+                                      onPlayNext = { vm.playNext(ep) }
+                                  )
                               }
                           }
                       }
@@ -241,30 +337,82 @@ fun MainContent() {
            }
         }
         
-        if (state.current != null) {
-            Box(Modifier.align(Alignment.BottomCenter).padding(16.dp).padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) { 
-                GlassMiniPlayer(state.current!!, { vm.togglePlay() }, { showPlayer = true }) 
+        AnimatedVisibility(
+            visible = state.current != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(Modifier.padding(16.dp).padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) { 
+                GlassMiniPlayer(
+                    spec = PlayerSpec(
+                        title = state.current!!.episodeTitle,
+                        artist = state.current!!.title,
+                        imageUrl = state.current!!.imageUrl,
+                        isPlaying = state.isPlaying,
+                        currentMs = state.currentTime,
+                        durationMs = state.duration,
+                        speed = state.speed,
+                        amplitude = state.amplitude,
+                        sleepTimerSeconds = sleepTimerSeconds,
+                        dominantColor = state.dominantColor
+                    ),
+                    onPlay = { vm.togglePlay() }, 
+                    onClick = { showPlayer = true }
+                ) 
             }
         }
     }
 
     if (showPlayer && state.current != null) {
-        Surface(Modifier.fillMaxSize(), color = Color.Black.copy(0.95f)) {
-            GlassPlayerScreen(
-                podcast = state.current!!,
-                isPlaying = state.isPlaying,
-                currentTime = state.currentTime,
-                duration = state.duration,
-                sleepTimerSeconds = sleepTimerSeconds,
-                speed = state.speed,
-                onClose = { showPlayer = false },
-                onPlayPause = { vm.togglePlay() },
-                onSeek = { vm.seek(it) },
-                onSkip = { vm.skip(it) },
-                onSetSleepTimer = { vm.startSleepTimer() },
-                onSetSpeed = { vm.setPlaybackSpeed(it) },
-            )
+        Surface(Modifier.fillMaxSize(), color = Color.Transparent) { // Transparent surface for better blending
+            AnimatedVisibility(
+                visible = showPlayer,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+            ) {
+                 GlassPlayerScreen(
+                    spec = PlayerSpec(
+                        title = state.current!!.episodeTitle,
+                        artist = state.current!!.title,
+                        imageUrl = state.current!!.imageUrl,
+                        isPlaying = state.isPlaying,
+                        currentMs = state.currentTime,
+                        durationMs = state.duration,
+                        speed = state.speed,
+                        amplitude = state.amplitude,
+                        sleepTimerSeconds = sleepTimerSeconds,
+                        dominantColor = state.dominantColor
+                    ),
+                    onClose = { showPlayer = false },
+                    onPlayPause = { vm.togglePlay() },
+                    onSeek = { vm.seek(it) },
+                    onSkip = { vm.skip(it) },
+                    onSetSpeed = { vm.setPlaybackSpeed(it) },
+                )
+            }
         }
+    }
+    
+    if (isCarMode) {
+        CarModeScreen(
+            spec = if (state.current != null) PlayerSpec(
+                title = state.current!!.episodeTitle,
+                artist = state.current!!.title,
+                imageUrl = state.current!!.imageUrl,
+                isPlaying = state.isPlaying,
+                currentMs = state.currentTime,
+                durationMs = state.duration,
+                speed = state.speed,
+                amplitude = state.amplitude,
+                sleepTimerSeconds = sleepTimerSeconds,
+                dominantColor = state.dominantColor
+            ) else null,
+            onTogglePlay = { vm.togglePlay() },
+            onSkipForward = { vm.skip(30) },
+            onSkipBack = { vm.skip(-15) },
+            onExit = { isCarMode = false }
+        )
     }
 
     if (showAddDialog) {
@@ -304,17 +452,18 @@ fun AddPodcastDialog(
                         Spacer(Modifier.height(16.dp))
                         LazyColumn {
                             items(searchResults) { result ->
-                                Row(Modifier.fillMaxWidth().clickable { onImport(result.feedUrl) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    AsyncImage(
-                                        result.artworkUrl100,
-                                        null,
-                                        Modifier
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(8.dp)),
-                                        contentScale = ContentScale.Crop
+                                Box(Modifier.padding(bottom=8.dp)) {
+                                    GlassPodcastRow(
+                                        spec = PodcastRowSpec(
+                                            id = result.feedUrl, // No dedicated ID for search result item, use feed
+                                            title = result.collectionName,
+                                            subtitle = "", // artistName not available in ItunesSearchResult mapping
+                                            imageUrl = result.artworkUrl100
+                                        ),
+                                        onClick = { onImport(result.feedUrl) }, // Tap adds feed
+                                        onDownload = { /* No-op, or preview? */ },
+                                        onAddToQueue = { onImport(result.feedUrl) } // Add = Subscribe
                                     )
-                                    Spacer(Modifier.width(16.dp))
-                                    Text(result.collectionName, color = Color.White)
                                 }
                             }
                         }

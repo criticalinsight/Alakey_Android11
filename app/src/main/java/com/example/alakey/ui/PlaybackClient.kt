@@ -36,7 +36,8 @@ class PlaybackClient @Inject constructor(
         val duration: Long = 1L,
         val currentPosition: Long = 0L,
         val currentMediaId: String? = null, 
-        val playbackSpeed: Float = 1.0f
+        val playbackSpeed: Float = 1.0f,
+        val amplitude: Float = 0f
     )
 
     private val _state = MutableStateFlow(PlaybackState())
@@ -52,6 +53,9 @@ class PlaybackClient @Inject constructor(
     val sleepTimerSeconds: StateFlow<Int> = _sleepTimerSeconds.asStateFlow()
     private var sleepTimerJob: Job? = null
     private var initialSleepDuration: Int = 0
+    
+    // Smart Resume
+    private var lastPauseTime: Long = 0
 
     init {
         connect()
@@ -74,7 +78,7 @@ class PlaybackClient @Inject constructor(
     private fun setupListener() {
         controller?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _state.update { it.copy(isPlaying = isPlaying) }
+                processEvent(PlaybackEvent.IsPlayingChanged(isPlaying))
                 if (isPlaying) startProgressPolling() else stopProgressPolling()
             }
 
@@ -85,26 +89,44 @@ class PlaybackClient @Inject constructor(
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                _state.update { 
-                    it.copy(
-                        currentMediaId = mediaItem?.mediaId,
-                        duration = controller?.duration?.coerceAtLeast(1) ?: 1
-                    )
-                }
+                processEvent(PlaybackEvent.MediaChanged(
+                    mediaId = mediaItem?.mediaId,
+                    duration = controller?.duration?.coerceAtLeast(1) ?: 1
+                ))
             }
         })
+    }
+    
+    // Pure Reduction
+    private fun reduce(currentState: PlaybackState, event: PlaybackEvent): PlaybackState {
+        return when (event) {
+            is PlaybackEvent.IsPlayingChanged -> currentState.copy(isPlaying = event.isPlaying)
+            is PlaybackEvent.PositionUpdated -> currentState.copy(
+                currentPosition = event.position, 
+                duration = if (event.duration > 0) event.duration else 1L, // Ensure non-zero
+                amplitude = event.amplitude
+            )
+            is PlaybackEvent.MediaChanged -> currentState.copy(
+                currentMediaId = event.mediaId,
+                duration = event.duration
+            )
+            is PlaybackEvent.SpeedChanged -> currentState.copy(playbackSpeed = event.speed)
+        }
+    }
+    
+    private fun processEvent(event: PlaybackEvent) {
+        _state.update { reduce(it, event) }
     }
 
     private fun syncInitialState() {
         controller?.let { c ->
-            _state.update {
-                it.copy(
-                    isPlaying = c.isPlaying,
-                    duration = c.duration.coerceAtLeast(1),
-                    currentMediaId = c.currentMediaItem?.mediaId,
-                    playbackSpeed = c.playbackParameters.speed
-                )
-            }
+            // Batch initial sync? Or emit sequence?
+            // Let's just update directly or emit multiple events.
+            // Direct reducers for distinct properties.
+            processEvent(PlaybackEvent.IsPlayingChanged(c.isPlaying))
+            processEvent(PlaybackEvent.MediaChanged(c.currentMediaItem?.mediaId, c.duration.coerceAtLeast(1)))
+            processEvent(PlaybackEvent.SpeedChanged(c.playbackParameters.speed))
+            
             if (c.isPlaying) startProgressPolling()
         }
     }
@@ -112,11 +134,16 @@ class PlaybackClient @Inject constructor(
     private fun startProgressPolling() {
         progressJob?.cancel()
         progressJob = scope.launch {
+            var counter = 0f
             while (isActive) {
                 val pos = controller?.currentPosition ?: 0L
                 val dur = controller?.duration ?: 1L
-                _state.update { it.copy(currentPosition = pos, duration = if (dur > 0) dur else 1L) }
-                delay(1000)
+                val amp = if (controller?.isPlaying == true) {
+                    (Math.sin(counter.toDouble()).toFloat() * 0.2f + 0.8f) * (0.8f + Math.random().toFloat() * 0.4f)
+                } else 0f
+                processEvent(PlaybackEvent.PositionUpdated(pos, dur, amp))
+                counter += 0.5f
+                delay(100)
             }
         }
     }
@@ -127,6 +154,11 @@ class PlaybackClient @Inject constructor(
     }
 
     fun play(podcast: PodcastEntity) {
+        val c = controller
+        if (c == null) {
+            Log.e("PlaybackClient", "Cannot play: controller is null")
+            return
+        }
         val mediaItem = MediaItem.Builder()
             .setMediaId(podcast.id)
             .setUri(podcast.audioUrl)
@@ -138,16 +170,28 @@ class PlaybackClient @Inject constructor(
                     .build()
             )
             .build()
-        controller?.setMediaItem(mediaItem)
-        controller?.prepare()
-        controller?.play()
+        c.setMediaItem(mediaItem)
+        c.prepare()
+        c.play()
     }
 
     fun resume() {
+        Log.d("PlaybackClient", "Resume called. Controller: ${controller != null}")
+        
+        // Smart Resume: Rewind 3s if paused > 5 min
+        if (lastPauseTime > 0 && (System.currentTimeMillis() - lastPauseTime) > 5 * 60 * 1000) {
+            val pos = controller?.currentPosition ?: 0L
+            controller?.seekTo((pos - 3000).coerceAtLeast(0))
+            Log.d("PlaybackClient", "Smart Resume: Rewinded 3s")
+        }
+        lastPauseTime = 0
+        
         controller?.play()
     }
 
     fun pause() {
+        Log.d("PlaybackClient", "Pause called. Controller: ${controller != null}")
+        lastPauseTime = System.currentTimeMillis()
         controller?.pause()
     }
 
@@ -166,7 +210,7 @@ class PlaybackClient @Inject constructor(
 
     fun setSpeed(speed: Float) {
         controller?.setPlaybackSpeed(speed)
-        _state.update { it.copy(playbackSpeed = speed) }
+        processEvent(PlaybackEvent.SpeedChanged(speed))
     }
     
     fun startSleepTimer(minutes: Int) {

@@ -22,4 +22,13 @@ interface EventLogDao {
 
     @Query("SELECT * FROM event_log ORDER BY timestamp DESC LIMIT 50")
     suspend fun getRecentEvents(): List<EventLogEntity>
+
+    @Query("SELECT * FROM event_log WHERE type = :type ORDER BY timestamp DESC LIMIT 50")
+    suspend fun getEventsByType(type: String): List<EventLogEntity>
+
+    @Query("SELECT * FROM event_log WHERE status = 'FAILED' ORDER BY timestamp DESC LIMIT 50")
+    suspend fun getFailedEvents(): List<EventLogEntity>
+    
+    @Query("SELECT * FROM event_log WHERE payload LIKE '%' || :query || '%' ORDER BY timestamp DESC LIMIT 50")
+    suspend fun grepLogs(query: String): List<EventLogEntity>
 }

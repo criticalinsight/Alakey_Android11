@@ -40,8 +40,17 @@ class PlaybackClient @Inject constructor(
         val amplitude: Float = 0f
     )
 
+    data class DesiredState(
+        val isPlaying: Boolean = false,
+        val mediaItem: MediaItem? = null,
+        val seekPosition: Long? = null,
+        val playbackSpeed: Float = 1.0f
+    )
+
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
+    
+    private val _desiredState = MutableStateFlow(DesiredState())
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var controller: MediaController? = null
@@ -69,6 +78,7 @@ class PlaybackClient @Inject constructor(
                 controller = controllerFuture?.get()
                 setupListener()
                 syncInitialState()
+                startReconciliationLoop() // Start the Driver
             } catch (e: Exception) {
                 Log.e("PlaybackClient", "Failed to connect to MediaController", e)
             }
@@ -153,13 +163,47 @@ class PlaybackClient @Inject constructor(
         progressJob = null
     }
 
-    fun play(podcast: PodcastEntity) {
-        val c = controller
-        if (c == null) {
-            Log.e("PlaybackClient", "Cannot play: controller is null")
-            return
+    // --- Declarative Driver (Reconciler) ---
+    private fun startReconciliationLoop() {
+        scope.launch {
+            _desiredState.collect { desired ->
+                controller?.let { c ->
+                    reconcile(desired, c)
+                }
+            }
         }
-        val mediaItem = MediaItem.Builder()
+    }
+
+    private fun reconcile(desired: DesiredState, c: MediaController) {
+        // 1. Reconcile Media ID
+        if (desired.mediaItem != null && c.currentMediaItem?.mediaId != desired.mediaItem.mediaId) {
+             c.setMediaItem(desired.mediaItem)
+             c.prepare()
+        }
+        
+        // 2. Reconcile Seek
+        if (desired.seekPosition != null) {
+            c.seekTo(desired.seekPosition)
+            // Reset seek intent after consumption? Or treat as value? 
+            // Ideally we consume it. For simplicity in this demo, strict value updates.
+            _desiredState.update { it.copy(seekPosition = null) } 
+        }
+
+        // 3. Reconcile Play/Pause
+        if (desired.isPlaying && !c.isPlaying) {
+            c.play()
+        } else if (!desired.isPlaying && c.isPlaying) {
+            c.pause()
+        }
+        
+        // 4. Reconcile Speed
+        if (c.playbackParameters.speed != desired.playbackSpeed) {
+            c.setPlaybackSpeed(desired.playbackSpeed)
+        }
+    }
+
+    fun play(podcast: PodcastEntity) {
+        val item = MediaItem.Builder()
             .setMediaId(podcast.id)
             .setUri(podcast.audioUrl)
             .setMediaMetadata(
@@ -170,47 +214,48 @@ class PlaybackClient @Inject constructor(
                     .build()
             )
             .build()
-        c.setMediaItem(mediaItem)
-        c.prepare()
-        c.play()
+            
+        // Pure Intent Update
+        _desiredState.update { 
+            it.copy(isPlaying = true, mediaItem = item) 
+        }
     }
 
     fun resume() {
-        Log.d("PlaybackClient", "Resume called. Controller: ${controller != null}")
-        
-        // Smart Resume: Rewind 3s if paused > 5 min
+        // Smart Resume Logic should happen at intent time or in Reconciler?
+        // Intent time is simpler for now.
         if (lastPauseTime > 0 && (System.currentTimeMillis() - lastPauseTime) > 5 * 60 * 1000) {
-            val pos = controller?.currentPosition ?: 0L
-            controller?.seekTo((pos - 3000).coerceAtLeast(0))
-            Log.d("PlaybackClient", "Smart Resume: Rewinded 3s")
+            val currentPos = controller?.currentPosition ?: 0L
+            val rewindPos = (currentPos - 3000).coerceAtLeast(0)
+             _desiredState.update { it.copy(seekPosition = rewindPos) }
+             Log.d("PlaybackClient", "Smart Resume: Rewind Intent Set")
         }
         lastPauseTime = 0
-        
-        controller?.play()
+        _desiredState.update { it.copy(isPlaying = true) }
     }
 
     fun pause() {
-        Log.d("PlaybackClient", "Pause called. Controller: ${controller != null}")
         lastPauseTime = System.currentTimeMillis()
-        controller?.pause()
+        _desiredState.update { it.copy(isPlaying = false) }
     }
 
     fun togglePlay() {
-        if (controller?.isPlaying == true) pause() else resume()
+        // Toggle based on DESIRED state, not actual (debouncing)
+        val currentlyDesired = _desiredState.value.isPlaying
+        if (currentlyDesired) pause() else resume()
     }
 
     fun seek(ms: Long) {
-        controller?.seekTo(ms)
+        _desiredState.update { it.copy(seekPosition = ms) }
     }
 
     fun skip(seconds: Int) {
-        val newPos = (controller?.currentPosition ?: 0) + (seconds * 1000)
-        controller?.seekTo(newPos)
+        val current = controller?.currentPosition ?: 0L
+        _desiredState.update { it.copy(seekPosition = current + (seconds * 1000)) }
     }
 
     fun setSpeed(speed: Float) {
-        controller?.setPlaybackSpeed(speed)
-        processEvent(PlaybackEvent.SpeedChanged(speed))
+        _desiredState.update { it.copy(playbackSpeed = speed) }
     }
     
     fun startSleepTimer(minutes: Int) {

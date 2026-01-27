@@ -27,9 +27,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -49,6 +53,7 @@ fun MainContent() {
     val vm: AppViewModel = hiltViewModel()
     val state by vm.uiState.collectAsState()
     val searchResults by vm.searchResults.collectAsState()
+    val logs by vm.logs.collectAsState()
     val sleepTimerSeconds by vm.sleepTimerSeconds.collectAsState()
     val context = LocalContext.current
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -85,6 +90,15 @@ fun MainContent() {
         }
     }
 
+    // Phase 4: Simplicity - Declarative Back Logic
+    BackHandler(enabled = state.navigationStack.size > 1 || state.isPlayerOpen) {
+        if (state.isPlayerOpen) {
+            vm.dispatch(AppViewModel.Action.SetPlayerOpen(false))
+        } else {
+            vm.dispatch(AppViewModel.Action.Pop)
+        }
+    }
+
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -102,15 +116,13 @@ fun MainContent() {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
-    var showPlayer by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var isCarMode by remember { mutableStateOf(false) }
-    var selectedView by remember { mutableIntStateOf(0) } // 0 = Library, 1 = Marketplace
-
-    BackHandler(showPlayer) { showPlayer = false }
+    var showDebug by remember { mutableStateOf(false) } // Debug Mode
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        FluxBackground()
+        FluxBackground(amplitude = state.amplitude, color = Color(state.dominantColor))
+        // Debug Trigger (Invisible top left)
+        Box(Modifier.size(64.dp).align(Alignment.TopStart).zIndex(10f).clickable { showDebug = !showDebug })
         
         Column(Modifier.fillMaxSize()) {
            Row(
@@ -130,9 +142,9 @@ fun MainContent() {
                    Box(
                        Modifier
                            .clip(RoundedCornerShape(8.dp))
-                           .background(if (selectedView == 0) Color.Cyan.copy(0.3f) else Color.Transparent)
+                           .background(if (state.navigationStack.last() == AppViewModel.Screen.Library) Color.Cyan.copy(0.3f) else Color.Transparent)
                            .pressScale()
-                           .clickable { selectedView = 0 }
+                           .clickable { vm.navigate(AppViewModel.Screen.Library) }
                            .padding(horizontal = 16.dp, vertical = 8.dp)
                    ) {
                         Text("Library", color = Color.White, fontWeight = FontWeight.Bold)
@@ -140,9 +152,9 @@ fun MainContent() {
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedView == 2) Color.Cyan.copy(0.3f) else Color.Transparent)
+                            .background(if (state.navigationStack.last() == AppViewModel.Screen.Inbox) Color.Cyan.copy(0.3f) else Color.Transparent)
                             .pressScale()
-                            .clickable { selectedView = 2 } // Inbox logic
+                            .clickable { vm.navigate(AppViewModel.Screen.Inbox) } 
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text("Inbox", color = Color.White, fontWeight = FontWeight.Bold)
@@ -150,9 +162,9 @@ fun MainContent() {
                     Box(
                        Modifier
                            .clip(RoundedCornerShape(8.dp))
-                           .background(if (selectedView == 1) Color.Cyan.copy(0.3f) else Color.Transparent)
+                           .background(if (state.navigationStack.last() == AppViewModel.Screen.Marketplace) Color.Cyan.copy(0.3f) else Color.Transparent)
                            .pressScale()
-                           .clickable { selectedView = 1 }
+                           .clickable { vm.navigate(AppViewModel.Screen.Marketplace) }
                            .padding(horizontal = 16.dp, vertical = 8.dp)
                    ) {
                        Text("Marketplace", color = Color.White, fontWeight = FontWeight.Bold)
@@ -173,7 +185,7 @@ fun MainContent() {
                 }
                 
                 Row {
-                    IconButton(onClick = { isCarMode = true }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape).pressScale()) {
+                    IconButton(onClick = { vm.setCarMode(true) }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape).pressScale()) {
                         Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White)
                     }
                     Spacer(Modifier.width(8.dp))
@@ -183,113 +195,122 @@ fun MainContent() {
                 }
            }
            
-           if (selectedView == 0) {
-                  val filters = listOf("All", "Continue", "New", "Short")
-                  var activeFilter by remember { mutableStateOf("All") }
-                  
-                  Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      filters.forEach { f ->
-                          val isActive = activeFilter == f
-                          Box(Modifier.clip(RoundedCornerShape(50)).background(if(isActive) Color(0xFF00F0FF).copy(0.3f) else Color.White.copy(0.1f)).pressScale().clickable { activeFilter = f }.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                              Text(f, color = if(isActive) Color(0xFF00F0FF) else Color.White.copy(0.7f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
-                          }
-                      }
-                  }
+            val activeScreen = state.navigationStack.last()
+            
+            AnimatedContent(
+                targetState = activeScreen,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
+                },
+                label = "screen_transition",
+                modifier = Modifier.weight(1f)
+            ) { currentScreen ->
+                if (currentScreen == AppViewModel.Screen.Library) {
+                   val filters = listOf("All", "Continue", "New", "Short")
+                   
+                   Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                       filters.forEach { f ->
+                           val isActive = state.activeFilter == f
+                           Box(Modifier.clip(RoundedCornerShape(50)).background(if(isActive) Color(0xFF00F0FF).copy(0.3f) else Color.White.copy(0.1f)).pressScale().clickable { vm.setFilter(f) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                               Text(f, color = if(isActive) Color(0xFF00F0FF) else Color.White.copy(0.7f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
+                           }
+                       }
+                   }
 
-                  val filteredPodcasts = remember(state.podcasts, activeFilter) {
-                      when(activeFilter) {
-                          "Continue" -> state.podcasts.filter { p -> 
-                              val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
-                              p.progress > 0 && p.progress.toDouble() < (duration * 0.95)
-                          }.sortedByDescending { it.lastPlayed }
-                          "New" -> state.podcasts.filter { p ->
-                                 val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
-                                 p.progress.toDouble() < (duration * 0.95)
-                          }.sortedByDescending { it.pubDate } 
-                          "Short" -> state.podcasts.filter { 
-                              val duration = if (it.duration > 0) it.duration.toDouble() else Double.MAX_VALUE
-                              it.progress.toDouble() < (duration * 0.95) && it.duration in 1..1200 
-                          }
-                          else -> state.podcasts.filter { p ->
-                              val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
-                              p.progress.toDouble() < (duration * 0.95)
-                          }
-                      }
-                  }
-
-                  val expandedGroups = remember { mutableStateListOf<String>() }
-                  
-                  AnimatedContent(
-                      targetState = activeFilter,
-                      transitionSpec = {
-                          (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
-                      },
-                      label = "filter_transition",
-                      modifier = Modifier.weight(1f)
-                  ) { _ ->
-                      LazyColumn(contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
-                          if (filteredPodcasts.isEmpty()) {
-                              item { 
-                                  Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
-                                      Column(horizontalAlignment = Alignment.CenterHorizontally) { 
-                                          Icon(Icons.Rounded.FilterListOff, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
-                                          Spacer(Modifier.height(16.dp))
-                                          NebulaText("No episodes found", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
-                                      } 
-                                  } 
-                              }
-                          } else {
-                              val grouped = if(activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
-                              
-                              grouped.forEach { (title, eps) ->
-                                  if (eps.isNotEmpty()) {
-                                      // Header
-                                      item(key = "header_$title") {
-                                          GlassFolderHeader(
-                                              title = title,
-                                              imageUrl = eps.first().imageUrl,
-                                              count = eps.size,
-                                              isExpanded = expandedGroups.contains(title),
-                                              onToggle = { 
-                                                  if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
-                                              },
-                                              onUnsubscribe = { vm.unsubscribe(title) }
-                                          )
-                                      }
-                                      
-                                      // Episodes (if expanded)
-                                      if (expandedGroups.contains(title) || activeFilter != "All") {
-                                          items(items = eps, key = { it.id }) { ep ->
-                                              Box(Modifier.padding(start = 16.dp)) {
-                                                  GlassPodcastRow(
-                                                      spec = PodcastRowSpec(
-                                                          id = ep.id,
-                                                          title = ep.episodeTitle,
-                                                          subtitle = ep.title,
-                                                          imageUrl = ep.imageUrl,
-                                                          isDownloaded = ep.isDownloaded,
-                                                          isInQueue = ep.isInQueue,
-                                                          progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
-                                                      ),
-                                                      onClick = { vm.play(ep); showPlayer = true },
-                                                      onDownload = { vm.downloadEpisode(ep.id) },
-                                                      onAddToQueue = { 
-                                                          if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
-                                                      },
-                                                      onMarkPlayed = { vm.markPlayed(ep) },
-                                                      onArchiveOlder = { vm.markOlderPlayed(ep) },
-                                                      onDeleteDownload = { vm.deleteDownload(ep) },
-                                                      onPlayNext = { vm.playNext(ep) }
-                                                  )
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
-           } else if (selectedView == 2) {
+                    val filteredPodcasts = remember(state.podcasts, state.optimisticPodcasts, state.activeFilter) {
+                        val allPodcasts = (state.podcasts + state.optimisticPodcasts).distinctBy { it.feedUrl }
+                        when(state.activeFilter) {
+                            "Continue" -> allPodcasts.filter { p -> 
+                                val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
+                                p.progress > 0 && p.progress.toDouble() < (duration * 0.95)
+                            }.sortedByDescending { it.lastPlayed }
+                            "New" -> allPodcasts.filter { p ->
+                                   val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
+                                   p.progress.toDouble() < (duration * 0.95)
+                            }.sortedByDescending { it.pubDate } 
+                            "Short" -> allPodcasts.filter { 
+                                val duration = if (it.duration > 0) it.duration.toDouble() else Double.MAX_VALUE
+                                it.progress.toDouble() < (duration * 0.95) && it.duration in 1..1200 
+                            }
+                            else -> allPodcasts.filter { p ->
+                                val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
+                                p.progress.toDouble() < (duration * 0.95)
+                            }
+                        }
+                    }
+                   val expandedGroups = remember { mutableStateListOf<String>() }
+                   
+                   AnimatedContent(
+                       targetState = state.activeFilter,
+                       transitionSpec = {
+                           (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
+                       },
+                       label = "filter_transition",
+                       modifier = Modifier.weight(1f)
+                   ) { filter ->
+                       LazyColumn(contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
+                           if (filteredPodcasts.isEmpty()) {
+                               item { 
+                                   Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
+                                       Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                                           Icon(Icons.Rounded.FilterListOff, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
+                                           Spacer(Modifier.height(16.dp))
+                                           NebulaText("No episodes found", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
+                                       } 
+                                   } 
+                               }
+                           } else {
+                               val grouped = if(state.activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
+                               
+                               grouped.forEach { (title, eps) ->
+                                   if (eps.isNotEmpty()) {
+                                       // Header
+                                       item(key = "header_$title") {
+                                           GlassFolderHeader(
+                                               title = title,
+                                               imageUrl = eps.first().imageUrl,
+                                               count = eps.size,
+                                               isExpanded = expandedGroups.contains(title),
+                                               onToggle = { 
+                                                   if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
+                                               },
+                                               onUnsubscribe = { vm.unsubscribe(title) }
+                                           )
+                                       }
+                                       
+                                       // Episodes (if expanded)
+                                       if (expandedGroups.contains(title) || state.activeFilter != "All") {
+                                           items(items = eps, key = { it.id }) { ep ->
+                                               Box(Modifier.padding(start = 16.dp)) {
+                                                   GlassPodcastRow(
+                                                       spec = PodcastRowSpec(
+                                                           id = ep.id,
+                                                           title = ep.episodeTitle,
+                                                           subtitle = ep.title,
+                                                           imageUrl = ep.imageUrl,
+                                                           isDownloaded = ep.isDownloaded,
+                                                           isInQueue = ep.isInQueue,
+                                                           progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
+                                                       ),
+                                                       onClick = { vm.play(ep); vm.setPlayerOpen(true) },
+                                                       onDownload = { vm.downloadEpisode(ep.id) },
+                                                       onAddToQueue = { 
+                                                           if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
+                                                       },
+                                                       onMarkPlayed = { vm.markPlayed(ep) },
+                                                       onArchiveOlder = { vm.markOlderPlayed(ep) },
+                                                       onDeleteDownload = { vm.deleteDownload(ep) },
+                                                       onPlayNext = { vm.playNext(ep) }
+                                                   )
+                                               }
+                                           }
+                                       }
+                                   }
+                               }
+                           }
+                       }
+                   }
+                } else if (currentScreen == AppViewModel.Screen.Inbox) {
                   // INBOX VIEW
                   val inbox = state.inbox
                   LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
@@ -316,7 +337,7 @@ fun MainContent() {
                                           isInQueue = ep.isInQueue,
                                           progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
                                       ),
-                                      onClick = { vm.play(ep); showPlayer = true },
+                                      onClick = { vm.play(ep); vm.setPlayerOpen(true) },
                                       onDownload = { vm.downloadEpisode(ep.id) },
                                       onAddToQueue = { 
                                           vm.addToQueue(ep) 
@@ -334,67 +355,46 @@ fun MainContent() {
                GlassMarketplace(onSubscribe = { query -> 
                    vm.marketplaceSubscribe(query)
                })
-           }
-        }
-        
-        AnimatedVisibility(
-            visible = state.current != null,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Box(Modifier.padding(16.dp).padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) { 
-                GlassMiniPlayer(
-                    spec = PlayerSpec(
-                        title = state.current!!.episodeTitle,
-                        artist = state.current!!.title,
-                        imageUrl = state.current!!.imageUrl,
-                        isPlaying = state.isPlaying,
-                        currentMs = state.currentTime,
-                        durationMs = state.duration,
-                        speed = state.speed,
-                        amplitude = state.amplitude,
-                        sleepTimerSeconds = sleepTimerSeconds,
-                        dominantColor = state.dominantColor
-                    ),
-                    onPlay = { vm.togglePlay() }, 
-                    onClick = { showPlayer = true }
-                ) 
-            }
-        }
-    }
-
-    if (showPlayer && state.current != null) {
-        Surface(Modifier.fillMaxSize(), color = Color.Transparent) { // Transparent surface for better blending
-            AnimatedVisibility(
-                visible = showPlayer,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-            ) {
-                 GlassPlayerScreen(
-                    spec = PlayerSpec(
-                        title = state.current!!.episodeTitle,
-                        artist = state.current!!.title,
-                        imageUrl = state.current!!.imageUrl,
-                        isPlaying = state.isPlaying,
-                        currentMs = state.currentTime,
-                        durationMs = state.duration,
-                        speed = state.speed,
-                        amplitude = state.amplitude,
-                        sleepTimerSeconds = sleepTimerSeconds,
-                        dominantColor = state.dominantColor
-                    ),
-                    onClose = { showPlayer = false },
-                    onPlayPause = { vm.togglePlay() },
-                    onSeek = { vm.seek(it) },
-                    onSkip = { vm.skip(it) },
-                    onSetSpeed = { vm.setPlaybackSpeed(it) },
-                )
             }
         }
     }
     
-    if (isCarMode) {
+    // --- Flux Player Continuum ---
+    val expansion by animateFloatAsState(
+        targetValue = if (state.isPlayerOpen) 1f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
+        label = "expansion"
+    )
+       if (state.current != null) {
+            val playerSpec = PlayerSpec(
+                title = state.current!!.episodeTitle,
+                artist = state.current!!.title,
+                imageUrl = state.current!!.imageUrl,
+                isPlaying = state.isPlaying,
+                currentMs = state.currentTime,
+                durationMs = state.duration,
+                speed = state.speed,
+                amplitude = state.amplitude,
+                sleepTimerSeconds = sleepTimerSeconds,
+                dominantColor = state.dominantColor,
+                vibrantColor = state.vibrantColor,
+                mutedColor = state.mutedColor
+            )
+            
+            FluxPlayerContinuum(
+                expansion = expansion,
+                spec = playerSpec,
+                onTogglePlay = { vm.togglePlay() },
+                onClick = { vm.setPlayerOpen(true) },
+                onClose = { vm.setPlayerOpen(false) },
+                onSeek = { vm.seek(it) },
+                onSkip = { vm.skip(it) },
+                onSetSpeed = { vm.setPlaybackSpeed(it) }
+            )
+        }
+    }
+    
+    if (state.isCarMode) {
         CarModeScreen(
             spec = if (state.current != null) PlayerSpec(
                 title = state.current!!.episodeTitle,
@@ -411,7 +411,7 @@ fun MainContent() {
             onTogglePlay = { vm.togglePlay() },
             onSkipForward = { vm.skip(30) },
             onSkipBack = { vm.skip(-15) },
-            onExit = { isCarMode = false }
+            onExit = { vm.setCarMode(false) }
         )
     }
 
@@ -424,6 +424,14 @@ fun MainContent() {
             },
             onSearch = { vm.searchPodcasts(it) },
             searchResults = searchResults
+        )
+    }
+
+    if (showDebug) {
+        DebugOverlay(
+            historySize = vm.history.size,
+            onTimeTravel = { vm.travelTo(it) },
+            logs = logs
         )
     }
 }

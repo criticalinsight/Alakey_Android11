@@ -22,12 +22,13 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.Executors
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class AudioService : MediaLibraryService() {
-    private var player: ExoPlayer? = null
+    @Inject lateinit var audioSystem: com.example.alakey.system.AudioSystem
+
     private var session: MediaLibrarySession? = null
-    private var loudnessEnhancer: android.media.audiofx.LoudnessEnhancer? = null
     
     // De-complected: Sleep Timer logic moved to PlaybackClient (Pure Logic Event Stream)
     // We keep the service as a humble shell for the Player instance.
@@ -35,18 +36,12 @@ class AudioService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        val attr = AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).setUsage(C.USAGE_MEDIA).build()
-        player = ExoPlayer.Builder(this).setAudioAttributes(attr, true).setHandleAudioBecomingNoisy(true).setSkipSilenceEnabled(true).build()
+        audioSystem.start()
+        
+        // Safety check: System might fail to start if Context is null? (Unlikely with Hilt)
+        val player = audioSystem.player ?: throw IllegalStateException("AudioSystem failed to start")
 
-        try {
-            loudnessEnhancer = android.media.audiofx.LoudnessEnhancer(player!!.audioSessionId)
-            loudnessEnhancer?.setTargetGain(200)
-            loudnessEnhancer?.enabled = true
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        session = MediaLibrarySession.Builder(this, player!!, object : MediaLibrarySession.Callback {} )
+        session = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {} )
             .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
             .build()
     }
@@ -54,8 +49,7 @@ class AudioService : MediaLibraryService() {
     override fun onGetSession(info: MediaSession.ControllerInfo) = session
     override fun onDestroy() { 
         session?.release()
-        player?.release()
-        loudnessEnhancer?.release()
+        audioSystem.stop()
         super.onDestroy() 
     }
 }

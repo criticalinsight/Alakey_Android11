@@ -40,19 +40,12 @@ object RssParser {
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType == XmlPullParser.START_TAG) {
                 if (parser.name == "title" && channelTitle == "Podcast") {
-                     channelTitle = readText(parser)
+                    channelTitle = readText(parser)
                 } else if (parser.name == "itunes:image" || parser.name == "image") {
-                     // Capture channel-level artwork
-                     val href = parser.getAttributeValue(null, "href")
-                     val url = if (!href.isNullOrEmpty()) href else {
-                         // Some feeds use <image><url>...</url></image>
-                         // But we'll stick to attributes for simplicity in this pass, or handle sub-tags?
-                         // Most RSS 2.0 uses <itunes:image href="...">.
-                         // Standard <image> usually has a <url> child. We might miss that with just attributes.
-                         // Let's assume attribute first.
-                         ""
-                     }
-                     if (url.isNotEmpty()) channelImage = url
+                    // Capture channel-level artwork
+                    val href = parser.getAttributeValue(null, "href")
+                    val url = if (!href.isNullOrEmpty()) href else ""
+                    if (url.isNotEmpty()) channelImage = url
                 } else if (parser.name == "item" || parser.name == "entry") {
                     readEntry(parser, feedUrl, channelTitle, channelImage)?.let { entries.add(it) }
                 }
@@ -64,49 +57,67 @@ object RssParser {
     private fun readEntry(parser: XmlPullParser, feedUrl: String, channelTitle: String, channelImage: String): PodcastEntity? {
         var title = ""
         var description = ""
-        var link = ""
         var audioUrl = ""
         var imageUrl = ""
         var pubDate = ""
-        var season = 0
-        var episodeType = "full"
+        var guid = ""
+        var duration = 0L
+        val attrs = mutableMapOf<String, String>()
 
         while (parser.next() != XmlPullParser.END_TAG) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name) {
                 "title" -> title = readText(parser)
                 "description", "summary", "content" -> description = readText(parser)
-                "link" -> link = readText(parser)
                 "enclosure" -> audioUrl = parser.getAttributeValue(null, "url") ?: ""
                 "itunes:image" -> imageUrl = parser.getAttributeValue(null, "href") ?: ""
                 "pubDate", "published" -> pubDate = readText(parser)
-                "itunes:season" -> season = readText(parser).toIntOrNull() ?: 0
-                "itunes:episodeType" -> episodeType = readText(parser)
+                "guid" -> guid = readText(parser)
+                "itunes:duration" -> {
+                    val raw = readText(parser)
+                    duration = parseDuration(raw)
+                }
+                "itunes:season" -> attrs["season"] = readText(parser)
+                "itunes:episodeType" -> attrs["episodeType"] = readText(parser)
                 else -> skip(parser)
             }
         }
         
-        // Validate required fields ("Simplicity is reliability" - reject malformed data early)
+        // Validate required fields
         if (audioUrl.isEmpty() || title.isEmpty()) return null
-
-        // Strip HTML from description for purity
-        val cleanDesc = description.replace(Regex("<.*?>"), " ").trim().take(500)
+        
+        // Default download policy for the registry
+        attrs["downloadPolicy"] = "latest"
 
         // Generate deterministic ID
-        val id = (feedUrl + audioUrl).hashCode().toString()
+        val finalId = if (guid.isNotEmpty()) "$feedUrl/$guid" else (feedUrl + audioUrl).hashCode().toString()
 
         return PodcastEntity(
-            id = id,
-            title = channelTitle, 
+            id = finalId,
+            title = channelTitle,
             episodeTitle = title,
-            description = cleanDesc,
+            description = description.replace(Regex("<.*?>"), " ").trim().take(500),
             imageUrl = if (imageUrl.isNotEmpty()) imageUrl else channelImage,
             audioUrl = audioUrl,
             feedUrl = feedUrl,
+            duration = duration,
             pubDate = pubDate,
-            season = season,
-            episodeType = episodeType
+            attributes = attrs
         )
+    }
+
+    private fun parseDuration(raw: String): Long {
+        return try {
+            val parts = raw.split(":").map { it.trim().toLong() }
+            when (parts.size) {
+                3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+                2 -> parts[0] * 60 + parts[1]
+                1 -> parts[0]
+                else -> 0L
+            } * 1000 // Convert to MS
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     private fun readText(parser: XmlPullParser): String {

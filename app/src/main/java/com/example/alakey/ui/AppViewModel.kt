@@ -8,6 +8,7 @@ import com.example.alakey.data.ItunesSearchResult
 import com.example.alakey.data.PodcastEntity
 import com.example.alakey.data.PodcastPalette
 import com.example.alakey.data.UniversalRepository
+import com.example.alakey.data.EventLogEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -32,8 +33,16 @@ class AppViewModel @Inject constructor(
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     
+    enum class Screen { Library, Marketplace, Inbox }
+
     data class UiState(
+        val navigationStack: List<Screen> = listOf(Screen.Library),
+        val isPlayerOpen: Boolean = false,
+        val isCarMode: Boolean = false,
+        val activeFilter: String = "All",
+        
         val podcasts: List<PodcastEntity> = emptyList(),
+        val optimisticPodcasts: List<PodcastEntity> = emptyList(),
         val current: PodcastEntity? = null,
         val isPlaying: Boolean = false,
         val currentTime: Long = 0,
@@ -42,15 +51,43 @@ class AppViewModel @Inject constructor(
         val queue: List<PodcastEntity> = emptyList(),
         val inbox: List<PodcastEntity> = emptyList(),
         val amplitude: Float = 0f,
-        val dominantColor: Int = AndroidColor.CYAN
+        val dominantColor: Int = AndroidColor.CYAN,
+        val vibrantColor: Int = AndroidColor.CYAN,
+        val mutedColor: Int = AndroidColor.GRAY
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+    
+    // Epochal Time Travel (History Tape)
+    private val _history = androidx.compose.runtime.mutableStateListOf<UiState>()
+    val history: List<UiState> get() = _history
+    
+    private fun updateState(function: (UiState) -> UiState) {
+        _uiState.update { current ->
+            val newState = function(current)
+            if (newState != current) {
+                _history.add(newState)
+                // Keep history finite (simplicity constraint)
+                if (_history.size > 50) _history.removeAt(0)
+            }
+            newState
+        }
+    }
+    
+    fun travelTo(index: Int) {
+         if (index in _history.indices) {
+             _uiState.value = _history[index] // Set value directly (no new history record)
+         }
+    }
 
     private val _searchResults = MutableStateFlow<List<ItunesSearchResult>>(emptyList())
     val searchResults: StateFlow<List<ItunesSearchResult>> = _searchResults.asStateFlow()
     
+    // Observability
+    private val _logs = MutableStateFlow<List<EventLogEntity>>(emptyList())
+    val logs: StateFlow<List<EventLogEntity>> = _logs.asStateFlow()
+
     val sleepTimerSeconds: StateFlow<Int> = playbackClient.sleepTimerSeconds
 
     sealed interface UserEvent {
@@ -61,16 +98,114 @@ class AppViewModel @Inject constructor(
     private val _userEvents = MutableSharedFlow<UserEvent>()
     val userEvents: SharedFlow<UserEvent> = _userEvents.asSharedFlow()
 
+    // --- Phase 6: Logical Frontend (Interceptor Chain) ---
+    sealed interface Action {
+        data class Navigate(val screen: Screen) : Action
+        object Pop : Action
+        data class SetPlayerOpen(val isOpen: Boolean) : Action
+        data class Play(val podcast: PodcastEntity) : Action
+        object TogglePlay : Action
+        data class Seek(val ms: Long) : Action
+        data class Skip(val sec: Int) : Action
+        data class SetSpeed(val speed: Float) : Action
+        data class SetFilter(val filter: String) : Action
+        data class SetCarMode(val enabled: Boolean) : Action
+        // Add more as we migrate...
+        
+        // Optimistic Actions
+        data class Subscribe(val feedUrl: String, val title: String, val imageUrl: String) : Action
+        data class Rollback(val historyIndex: Int, val error: String) : Action
+    }
+    
+    // Interceptor: (Action, State) -> Action? or Effect?
+    // Simplified: dispatch handles side effects vs pure state updates.
+    fun dispatch(action: Action) {
+        logAction(action) // Interceptor 1: Log
+        
+        // Interceptor 2: Reduce (State)
+        when(action) {
+            is Action.Navigate -> updateState { 
+                // Only push if different from current top
+                if (it.navigationStack.lastOrNull() != action.screen) {
+                    it.copy(navigationStack = it.navigationStack + action.screen)
+                } else it
+            }
+            is Action.Pop -> updateState { 
+                if (it.navigationStack.size > 1) {
+                    it.copy(navigationStack = it.navigationStack.dropLast(1))
+                } else it
+            }
+            is Action.SetPlayerOpen -> updateState { it.copy(isPlayerOpen = action.isOpen) }
+            is Action.SetFilter -> updateState { it.copy(activeFilter = action.filter) }
+            is Action.SetCarMode -> updateState { it.copy(isCarMode = action.enabled) }
+            is Action.Subscribe -> updateState {
+                val placeholder = PodcastEntity(
+                    id = "optimistic_${action.feedUrl.hashCode()}",
+                    title = action.title,
+                    episodeTitle = "Syncing feed...",
+                    description = "Requesting information from ${action.feedUrl}",
+                    imageUrl = action.imageUrl,
+                    audioUrl = "",
+                    feedUrl = action.feedUrl
+                )
+                it.copy(optimisticPodcasts = it.optimisticPodcasts + placeholder)
+            }
+            is Action.Rollback -> {
+                travelTo(action.historyIndex)
+                emitEvent(UserEvent.ShowError("Rollback: ${action.error}"))
+            }
+            // Playback actions don't mutate UI state directly (Reconciler does), but we pass them to Effect
+            else -> {} 
+        }
+
+        // Interceptor 3: Effects (Side Effects)
+        handleEffects(action)
+        
+        // Post-Action Observability: Refresh logs if action might have logged something
+        // Just eager refresh for now (Optimization later)
+        refreshLogs()
+    }
+    
+    private fun logAction(action: Action) {
+        if (action !is Action.Seek) { // Reduce noise
+             Log.d("Dispatcher", "Action: $action")
+        }
+    }
+    
+    private fun handleEffects(action: Action) {
+        when(action) {
+            is Action.Play -> playbackClient.play(action.podcast)
+            is Action.TogglePlay -> playbackClient.togglePlay()
+            is Action.Seek -> playbackClient.seek(action.ms)
+            is Action.Skip -> playbackClient.skip(action.sec)
+            is Action.SetSpeed -> playbackClient.setSpeed(action.speed)
+            is Action.Subscribe -> {
+                val previousIndex = _history.size - 2
+                viewModelScope.launch {
+                    repo.subscribe(action.feedUrl)
+                        .onSuccess {
+                            updateState { s -> s.copy(optimisticPodcasts = s.optimisticPodcasts.filter { it.feedUrl != action.feedUrl }) }
+                            emitEvent(UserEvent.ShowMessage("Subscribed!"))
+                        }
+                        .onFailure {
+                            dispatch(Action.Rollback(previousIndex, it.message ?: "Network error"))
+                        }
+                }
+            }
+            else -> {}
+        }
+    }
+
     init {
         // Hydrate Library
         viewModelScope.launch {
             repo.library.collect { podcasts ->
-                _uiState.update { it.copy(podcasts = podcasts) }
+                updateState { it.copy(podcasts = podcasts) }
                 // Re-link current podcast object if library updates
                 val currentId = playbackClient.state.value.currentMediaId
                 if (currentId != null) {
                     val p = podcasts.find { it.id == currentId }
-                    _uiState.update { it.copy(current = p) }
+                    updateState { it.copy(current = p) }
                 }
             }
         }
@@ -78,13 +213,13 @@ class AppViewModel @Inject constructor(
         // Hydrate Queue and Inbox
         viewModelScope.launch {
             repo.queue.collect { queue ->
-                _uiState.update { it.copy(queue = queue) }
+                updateState { it.copy(queue = queue) }
             }
         }
         
         viewModelScope.launch {
             repo.inbox.collect { inbox ->
-                _uiState.update { it.copy(inbox = inbox) }
+                updateState { it.copy(inbox = inbox) }
             }
         }
         
@@ -92,7 +227,7 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             playbackClient.state.collect { pbState ->
                 val podcast = _uiState.value.podcasts.find { it.id == pbState.currentMediaId }
-                _uiState.update {
+                updateState {
                     it.copy(
                         current = podcast,
                         isPlaying = pbState.isPlaying,
@@ -152,11 +287,7 @@ class AppViewModel @Inject constructor(
     }
 
     fun importFeed(url: String) {
-        viewModelScope.launch {
-            repo.subscribe(url)
-                .onSuccess { emitEvent(UserEvent.ShowMessage("Feed added successfully")) }
-                .onFailure { emitEvent(UserEvent.ShowError("Failed to add feed: ${it.message}")) }
-        }
+        dispatch(Action.Subscribe(url, "RSS Feed", ""))
     }
 
     fun searchPodcasts(query: String) {
@@ -168,23 +299,23 @@ class AppViewModel @Inject constructor(
     }
 
     fun play(p: PodcastEntity) {
-        playbackClient.play(p)
+        dispatch(Action.Play(p))
     }
 
     fun togglePlay() {
-        playbackClient.togglePlay()
+        dispatch(Action.TogglePlay)
     }
 
     fun seek(ms: Long) {
-        playbackClient.seek(ms)
+        dispatch(Action.Seek(ms))
     }
 
     fun skip(sec: Int) {
-        playbackClient.skip(sec)
+        dispatch(Action.Skip(sec))
     }
 
     fun setPlaybackSpeed(speed: Float) {
-        playbackClient.setSpeed(speed)
+        dispatch(Action.SetSpeed(speed))
     }
 
     fun unsubscribe(title: String) {
@@ -195,17 +326,14 @@ class AppViewModel @Inject constructor(
 
     fun marketplaceSubscribe(query: String) {
         viewModelScope.launch {
-            repo.searchPodcasts(query)
-                .onSuccess { results ->
-                    if (results.isNotEmpty()) {
-                        repo.subscribe(results.first().feedUrl)
-                            .onSuccess { emitEvent(UserEvent.ShowMessage("Subscribed to $query!")) }
-                            .onFailure { emitEvent(UserEvent.ShowError("Failed to subscribe")) }
-                    } else {
-                        emitEvent(UserEvent.ShowMessage("No results found for $query"))
-                    }
+            repo.searchPodcasts(query).onSuccess { results ->
+                if (results.isNotEmpty()) {
+                    val r = results.first()
+                    dispatch(Action.Subscribe(r.feedUrl, r.collectionName, r.artworkUrl100))
+                } else {
+                    emitEvent(UserEvent.ShowMessage("No results found for $query"))
                 }
-                .onFailure { emitEvent(UserEvent.ShowError("Search failed")) }
+            }.onFailure { emitEvent(UserEvent.ShowError("Search failed")) }
         }
     }
 
@@ -237,7 +365,11 @@ class AppViewModel @Inject constructor(
             
             // 1. Data-First: Check if we already have the fact stored
             if (currentPodcast != null && currentPodcast.palette != null && currentPodcast.imageUrl == url) {
-                _uiState.update { it.copy(dominantColor = currentPodcast.palette.dominant) }
+                updateState { it.copy(
+                    dominantColor = currentPodcast.palette.dominant,
+                    vibrantColor = currentPodcast.palette.vibrant,
+                    mutedColor = currentPodcast.palette.muted
+                ) }
                 return@launch
             }
 
@@ -259,7 +391,11 @@ class AppViewModel @Inject constructor(
                         val muted = palette.getMutedColor(AndroidColor.GRAY)
                         
                         // Update UI
-                        _uiState.update { it.copy(dominantColor = vibrant) }
+                        updateState { it.copy(
+                            dominantColor = dominant,
+                            vibrantColor = vibrant,
+                            mutedColor = muted
+                        ) }
                         
                         // 3. Persistence: Write the fact back to the ledger
                         if (currentPodcast != null) {
@@ -313,6 +449,29 @@ class AppViewModel @Inject constructor(
             // TODO: Implement "Add to Top" in Dao if strict "Play Next" needed.
             // For now, "Add to Queue" is sufficient context.
             emitEvent(UserEvent.ShowMessage("Added to queue"))
+        }
+    }
+    
+    // --- Navigation Logic (Pure Value) ---
+    fun navigate(screen: Screen) {
+        dispatch(Action.Navigate(screen))
+    }
+    
+    fun setPlayerOpen(isOpen: Boolean) {
+        dispatch(Action.SetPlayerOpen(isOpen))
+    }
+    
+    fun setCarMode(isCarMode: Boolean) {
+        dispatch(Action.SetCarMode(isCarMode))
+    }
+    
+    fun setFilter(filter: String) {
+        dispatch(Action.SetFilter(filter))
+    }
+    
+    fun refreshLogs() {
+        viewModelScope.launch {
+            _logs.value = repo.getRecentLogs()
         }
     }
 }

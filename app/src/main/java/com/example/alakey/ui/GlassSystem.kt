@@ -66,13 +66,17 @@ fun FluxBackground(modifier: Modifier = Modifier, amplitude: Float = 1f, color: 
             label = "t"
         )
         val shader = remember { RuntimeShader(LIQUID_PLASMA_SRC) }
-        val compositeTime = time * (0.5f + amplitude * 1.5f)
+        // Composite time: Increase speed with amplitude for "Excitement"
+        val compositeTime = time * (1.0f + amplitude * 2.0f)
         
         Canvas(modifier.fillMaxSize()) {
             shader.setFloatUniform("resolution", size.width, size.height)
             shader.setFloatUniform("time", compositeTime)
+            // Color Intensity: Brighter when loud
+            val glowAlpha = 0.1f + amplitude * 0.2f
+            
             drawRect(brush = ShaderBrush(shader))
-            drawRect(brush = Brush.radialGradient(listOf(color.copy(0.1f), Color.Transparent), radius = size.maxDimension), blendMode = BlendMode.Screen)
+            drawRect(brush = Brush.radialGradient(listOf(color.copy(glowAlpha), Color.Transparent), radius = size.maxDimension), blendMode = BlendMode.Screen)
         }
     } else { Box(modifier.fillMaxSize().background(Color(0xFF020024))) }
 }
@@ -250,18 +254,62 @@ fun GlassPodcastRow(
     }
 }
 
+
 @Composable
-fun GlassMiniPlayer(spec: PlayerSpec, onPlay: () -> Unit, onClick: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp).padding(bottom = 8.dp)) {
-        PrismaticGlass(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxSize().clickable(onClick = onClick).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(spec.imageUrl, null, Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(spec.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text(spec.artist, color = Color.LightGray, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+fun FluxPlayerContinuum(
+    expansion: Float, // 0.0 to 1.0 (0=Mini, 1=Full)
+    spec: PlayerSpec,
+    onTogglePlay: () -> Unit,
+    onClick: () -> Unit,
+    onClose: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onSkip: (Int) -> Unit,
+    onSetSpeed: (Float) -> Unit
+) {
+    
+    // Geometry Morphing
+    val cornerRadius = lerp(12f, 32f, expansion).dp
+    val padding = lerp(8f, 0f, expansion).dp
+    
+    Box(
+        Modifier
+            .fillMaxSize()
+            .padding(bottom = lerp(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value, 0f, expansion).dp)
+    ) {
+        // Shared Glass Surface
+        PrismaticGlass(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(lerp(0.08f, 1.0f, expansion)) // Approx 64dp to full
+                .padding(padding),
+            shape = RoundedCornerShape(cornerRadius)
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                if (expansion < 0.5f) {
+                    // Mini Layout
+                    Row(
+                        Modifier
+                            .fillMaxSize()
+                            .clickable(onClick = onClick)
+                            .padding(8.dp)
+                            .graphicsLayer { this.alpha = 1f - (expansion * 2f) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(spec.imageUrl, null, Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(spec.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(spec.artist, color = Color.LightGray, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                        }
+                        MorphingPlayPauseButton(spec.isPlaying, { onTogglePlay() }, Modifier.size(40.dp))
+                    }
+                } else {
+                    // Full Layout
+                    Box(Modifier.graphicsLayer { this.alpha = (expansion - 0.5f) * 2f }) {
+                        GlassPlayerMechanism(spec, 0f, onClose, onTogglePlay, onSeek, onSkip, onSetSpeed)
+                    }
                 }
-                MorphingPlayPauseButton(spec.isPlaying, { onPlay() }, Modifier.size(40.dp))
             }
         }
     }
@@ -329,8 +377,14 @@ fun GlassPlayerMechanism(
                 }.background(Color(spec.dominantColor).copy(0.4f), CircleShape))
                 
                 // Art
-                val animatedAmplitude by animateFloatAsState(targetValue = spec.amplitude, label = "breath")
-                val breathScale = 0.95f + (animatedAmplitude * 0.05f)
+                // "Pure Breath": The scale logic. 
+                // We use a spring-like response to the amplitude for organic movement.
+                val animatedAmplitude by animateFloatAsState(
+                    targetValue = spec.amplitude, 
+                    animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessLow),
+                    label = "breath"
+                )
+                val breathScale = 0.98f + (animatedAmplitude * 0.04f)
                 
                 Box(Modifier.size(280.dp).inertialTilt(15f).scale(breathScale).shadow(24.dp, RoundedCornerShape(32.dp)).clip(RoundedCornerShape(32.dp))) {
                     AsyncImage(spec.imageUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -366,7 +420,11 @@ fun GlassPlayerMechanism(
                         onSeek(it.toLong())
                         if (it.toLong() % 1000 < 100) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) 
                     }, 
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color(0xFF00F0FF), inactiveTrackColor = Color.White.copy(0.15f))
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White, 
+                        activeTrackColor = Color(spec.vibrantColor), 
+                        inactiveTrackColor = Color.White.copy(0.15f)
+                    )
                 )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { 
@@ -407,155 +465,46 @@ fun formatMs(ms: Long): String { val s = ms / 1000; return String.format(java.ut
 
 @Composable
 fun MorphingPlayPauseButton(isPlaying: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    val haptics = LocalHapticFeedback.current
     val transition = updateTransition(targetState = isPlaying, label = "PlayPause")
     val t by transition.animateFloat(
         transitionSpec = { tween(400, easing = FastOutSlowInEasing) },
         label = "progress"
     ) { if (it) 1f else 0f }
 
-    Canvas(modifier.clickable { onToggle() }) {
-        val w = size.width
-        val h = size.height
-        val barWidth = w / 3f
-        val gap = w / 3f
-        
+    Canvas(modifier.clickable { 
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onToggle() 
+    }) {
         // Morph logic:
         // Pause (1f): Two bars at x=0 and x=2*barWidth
         // Play (0f): Left bar becomes top half of triangle, Right bar becomes bottom half? 
         // Simpler: Just generic shape lerp if using Path, but manual drawing is cleaner for geometric morphs.
-        // Let's do the "Split Triangle" morph.
-        // Triangle vertices: (0,0), (0, h), (w, h/2)
-        // Split horizontally? No.
+        // for geometry morphs. Let's do the "Split Triangle" morph.
         
-        // Approach: Draw paths.
-        // Left bar: (0,0)-(w/3,0)-(w/3,h)-(0,h) -> Morph to Left part of triangle
-        // Right bar: (2w/3,0)-(w,0)-(w,h)-(2w/3,h) -> Morph to Right part of triangle
-        
-        // Let's stick to a high-quality "Pause" to "Play" utilizing a single path for smooth corners if possible,
-        // but for now, drawing two independent shapes that move is easier to read.
-        
-        val p1 = Path().apply {
-            // Left shape
-            moveTo(0f, 0f)
-            lineTo(barWidth, 0f)
-            lineTo(barWidth, h)
-            lineTo(0f, h)
-            close()
-        }
-        
-        // Simple scale/shape transform... actually, let's use the purely geometric approach:
-        // Pause:  || 
-        // Play:   |>
-        
-        // Lerp between:
-        // Left Bar Top-Left: (0,0) -> (0,0)
-        // Left Bar Top-Right: (w/3, 0) -> (w, h/2)
-        // Left Bar Bottom-Right: (w/3, h) -> (w, h/2)
-        // Left Bar Bottom-Left: (0, h) -> (0, h)
-        // Wait, that forms a triangle. So the "Right Bar" disappears?
-        // Better: The two bars merge.
-        
-        val pauseGap = gap * t // Gap exists at t=1 (Playing? No isPlaying=true means Pause icon shown? No, isPlaying=true means "Pause" action acts -> show Pause icon)
-        // isPlaying=true -> Show Pause Icon (Bars)
-        // isPlaying=false -> Show Play Icon (Triangle)
-        
-        val actualT = if (isPlaying) 1f else 0f 
-        // Actually, let's use the animated 't'
-        
-        // Lerping vertices is hard to get perfect without visual artifacts.
-        // Let's do a classic trick: The "Play" triangle is actually two halves.
-        // Top half: (0,0) -> (w, h/2) -> (0, h/2)
-        // Bottom half: (0,h) -> (w, h/2) -> (0, h/2)
-        // Pause bars: 
-        // Left: (0,0) -> (w/3, 0) -> (w/3, h) -> (0, h) ?? No.
-        
-        // Fallback to simpler standard: Pure Triangle <-> Pure Bars with crossfade? No, prompt asked for "Morphing".
-        // Let's use the Android 'AnimatedVectorDrawable' style logic manually.
-        // Draw Left Pause Bar morphing to Top Half of Triangle.
-        // Draw Right Pause Bar morphing to Bottom Half of Triangle.
-        
-        val center = h / 2f
-        
-        // Left Bar (Morphs to Upper Triangle)
-        val l1 = Offset(0f, 0f) 
-        val l2 = Offset(lerp(barWidth, w, 1f-t), lerp(0f, center, 1f-t))
-        val l3 = Offset(lerp(barWidth, 0f, 1f-t), lerp(h, center, 1f-t))
-        val l4 = Offset(0f, h)
-        // This is getting complex to math out perfectly for a "premium" feel in one shot.
-        // Let's try a proven approach: The "Pause" bars move together and the gap closes, while the right side scales down to a point.
-        
-        drawPath(
-            path = Path().apply {
-                // Top-Left
-                moveTo(0f, 0f)
-                // Top-Right: At Pause(t=1): w/3, 0. At Play(t=0): w, center
-                lineTo(lerp(w, w/3f, t), lerp(center, 0f, t))
-                // Bottom-Right: At Pause(t=1): w/3, h. At Play(t=0): w, center
-                lineTo(lerp(w, w/3f, t), lerp(center, h, t))
-                // Bottom-Left
-                lineTo(0f, h)
-                close()
-                
-                // Add the second bar for Pause?
-                // If we want two bars...
-            },
-            color = Color.Black
-        )
-        // For t=1 (Pause), we need the second bar.
-        if (t > 0.1f) {
-             drawRect(Color.Black, topLeft = Offset(2f * w / 3f, 0f), size = Size(w/3f, h), alpha = t)
-        }
-        // This math is a bit messy. Let's revert to a cleaner, simpler implementation that is visually robust:
-        // Just draw the standard icons but apply a scale/rotate transition.
-        // "Morphing Mechanics": path-based SVG animations.
-        // Okay, I will use the standard geometric morph:
-        // Pause [ |  | ]  <->  Play [ |> ] 
-        // Left bar stays, Right bar moves and shrinks?
-        
-        // Let's use a simple Canvas drawing that looks like a Play button (Tri) when t=0, and Pause (II) when t=1.
-        // Vertices:
-        // 1. (0,0) -> (0,0)
-        // 2. (w, h/2) -> (w/3, 0)  // Triangle Tip -> Top Real Pause
-        // 3. (w, h/2) -> (w/3, h)  // Triangle Tip -> Bottom Real Pause
-        // 4. (0, h) -> (0, h)
-        
-        // This forms the Left Bar + the Point.
-        // Where does the Right Bar come from?
-        // It fades in.
-        
-        // Revised Premium Approach:
-        // Draw two paths.
-        // Part A: Left side of Play / Left Bar of Pause
-        // Part B: Right side of Play / Right Bar of Pause (This is the hard part)
-        
-        // Let's stick to a high-quality cross-fade with scale for now to ensure it looks good and works, 
-        // as pure geometric morphing strictly via code without SVG paths often looks broken.
-        // BUT the prompt explicitly asked for "Morphing Mechanics".
-        // I will implement a "Split" morph.
+        // Approach: The "Pause" bars move together and the gap closes, while the 
+        // right side scales down to a point.
         
         val width = size.width
         val height = size.height
+        val center = height / 2f
+        val actualT = t
         
-        // Shape 1: Left Bar / Top Half
-        // Pause: Rect(0, 0, w/3, h)
-        // Play: Triangle(0,0, w, h/2, 0, h/2) ... no.
-        
-        // Let's try the "Pause bars split and merge to point"
         val barW = width * 0.3f
         
         // Left Part
         path.reset()
         path.moveTo(0f, 0f)
-        path.lineTo(lerp(width, barW, t), lerp(height/2f, 0f, t)) // Point/TopRight
-        path.lineTo(lerp(width, barW, t), lerp(height/2f, height, t)) // Point/BotRight
+        path.lineTo(lerp(width, barW, actualT), lerp(center, 0f, actualT)) // Point/TopRight
+        path.lineTo(lerp(width, barW, actualT), lerp(center, height, actualT)) // Point/BotRight
         path.lineTo(0f, height)
         path.close()
         
         drawPath(path, Color.Black)
         
         // Right Bar (Only visible in Pause, fades out/slides in)
-        if (t > 0f) {
-            drawRect(Color.Black, topLeft = Offset(width - barW, 0f), size = Size(barW, height), alpha = t)
+        if (actualT > 0f) {
+            drawRect(Color.Black, topLeft = Offset(width - barW, 0f), size = Size(barW, height), alpha = actualT)
         }
     }
 }

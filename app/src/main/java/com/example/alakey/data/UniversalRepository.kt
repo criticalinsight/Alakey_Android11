@@ -2,30 +2,34 @@ package com.example.alakey.data
 
 import android.content.Context
 import android.util.Log
-import com.google.gson.Gson
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import com.example.alakey.system.DatabaseSystem
+import com.example.alakey.system.NetworkSystem
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class UniversalRepository @Inject constructor(
-    private val dao: PodcastDao,
-    private val eventLogDao: EventLogDao,
+    private val dbSystem: DatabaseSystem,
+    private val networkSystem: NetworkSystem,
     @ApplicationContext private val context: Context
 ) {
+    private val dao get() = dbSystem.db.dao()
+    private val eventLogDao get() = dbSystem.db.eventLogDao()
+    private val factDao get() = dbSystem.db.factDao()
+    private val client get() = networkSystem.client
+
     val library = dao.getAllPodcasts()
     val inbox = dao.getInbox()
     val queue = dao.getQueue()
-    private val client = OkHttpClient()
 
     // Java 25 / Loom readiness: This dispatcher should eventually act on Virtual Threads.
     // val LoomDispatcher = Executors.newVirtualThreadPerTaskExecutor().asCoroutineDispatcher()
@@ -58,7 +62,7 @@ class UniversalRepository @Inject constructor(
         if (!response.isSuccessful) throw Exception("iTunes search failed: ${response.code}")
         
         val json = response.body!!.string()
-        Gson().fromJson(json, ItunesSearchResponse::class.java).results
+        com.example.alakey.domain.NetworkLogic.parseItunesResults(json)
     }
 
     suspend fun subscribe(url: String): Result<Boolean> = safeApiCall {
@@ -112,7 +116,8 @@ class UniversalRepository @Inject constructor(
 
     private suspend fun fetchWithProxy(url: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("https://api.allorigins.win/get?url=$url").build()
-        client.newCall(request).execute().body!!.string().let { JSONObject(it).getString("contents") }
+        val json = client.newCall(request).execute().body!!.string()
+        com.example.alakey.domain.NetworkLogic.extractProxyContent(json)
     }
 
     private suspend fun fetchDirect(url: String): String = withContext(Dispatchers.IO) {
@@ -194,5 +199,57 @@ class UniversalRepository @Inject constructor(
                 dao.markAsPlayedBatch(toMark, System.currentTimeMillis())
             }
         }
+    }
+    
+    // --- Phase 5: Information Model (Facts) ---
+    suspend fun assertFact(entityId: String, attribute: String, value: String) {
+        // In a true Datomic system, we accumulate. Here, we replace for "Simplicity" (Last-Write-Wins),
+        // or we append with new TX? 
+        // FactEntity PK is (entityId, attribute, tx). So we can have multiple values over time.
+        // However, queries need to select MAX(tx).
+        // For this Phase 5 implementation, let's just insert.
+        factDao.insert(FactEntity(entityId, attribute, value))
+    }
+    
+    suspend fun getFacts(entityId: String): List<FactEntity> = factDao.getFactsUsingEntity(entityId)
+    
+    suspend fun getAttribute(entityId: String, attribute: String): String? {
+         // Naive "Latest" query: Filter in memory.
+         // In prod, use window function in SQL.
+         return factDao.getFactsUsingEntity(entityId)
+             .filter { it.attribute == attribute }
+             .maxByOrNull { it.tx }
+             ?.value
+    }
+
+    // --- Phase 7: Observability (Logs) ---
+    suspend fun getRecentLogs() = eventLogDao.getRecentEvents()
+    suspend fun getLogsByType(type: String) = eventLogDao.getEventsByType(type)
+    suspend fun getFailedLogs() = eventLogDao.getFailedEvents()
+    suspend fun grepLogs(q: String) = eventLogDao.grepLogs(q)
+
+    suspend fun getAllFacts(): List<FactEntity> = factDao.getAllFacts()
+
+    suspend fun rawQuery(sql: String): List<Map<String, Any?>> = withContext(Dispatchers.IO) {
+        val cursor = dbSystem.db.query(sql, null)
+        val results = mutableListOf<Map<String, Any?>>()
+        cursor.use { c ->
+            val columnNames = c.columnNames
+            while (c.moveToNext()) {
+                val map = mutableMapOf<String, Any?>()
+                columnNames.forEachIndexed { index, name ->
+                    map[name] = when (c.getType(index)) {
+                        android.database.Cursor.FIELD_TYPE_NULL -> null
+                        android.database.Cursor.FIELD_TYPE_INTEGER -> c.getLong(index)
+                        android.database.Cursor.FIELD_TYPE_FLOAT -> c.getDouble(index)
+                        android.database.Cursor.FIELD_TYPE_STRING -> c.getString(index)
+                        android.database.Cursor.FIELD_TYPE_BLOB -> c.getBlob(index)
+                        else -> c.getString(index)
+                    }
+                }
+                results.add(map)
+            }
+        }
+        results
     }
 }

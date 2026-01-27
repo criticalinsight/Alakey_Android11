@@ -26,5 +26,7 @@ data class PlayerSpec(
     val speed: Float = 1.0f,
     val amplitude: Float = 0f,
     val sleepTimerSeconds: Int = 0,
-    val dominantColor: Int = 0xFF00FFFF.toInt() // Default cyan-ish
+    val dominantColor: Int = 0xFF00FFFF.toInt(),
+    val vibrantColor: Int = 0xFF00FFFF.toInt(),
+    val mutedColor: Int = 0xFF808080.toInt()
 )

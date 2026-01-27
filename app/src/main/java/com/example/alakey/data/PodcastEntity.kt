@@ -25,9 +25,7 @@ data class PodcastEntity(
     val lastPlayed: Long = 0,
     val chapters: List<Chapter> = emptyList(),
     val palette: PodcastPalette? = null,
-    val season: Int = 0,
-    val episodeType: String = "full",
-    val downloadPolicy: String = "latest"
+    val attributes: Map<String, String> = emptyMap()
 )
 
 data class ItunesSearchResult(val collectionName: String, val feedUrl: String, val artworkUrl100: String)

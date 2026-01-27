@@ -28,6 +28,7 @@ object RssParser {
         var eventType = parser.eventType
         // Store channel title
         var channelTitle = "Podcast" 
+        var channelImage = ""
 
         // Fast-forward to root
         while (eventType != XmlPullParser.START_TAG && eventType != XmlPullParser.END_DOCUMENT) {
@@ -39,17 +40,28 @@ object RssParser {
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType == XmlPullParser.START_TAG) {
                 if (parser.name == "title" && channelTitle == "Podcast") {
-                     // Only read the first title as channel title (channel struct usually comes before items)
                      channelTitle = readText(parser)
+                } else if (parser.name == "itunes:image" || parser.name == "image") {
+                     // Capture channel-level artwork
+                     val href = parser.getAttributeValue(null, "href")
+                     val url = if (!href.isNullOrEmpty()) href else {
+                         // Some feeds use <image><url>...</url></image>
+                         // But we'll stick to attributes for simplicity in this pass, or handle sub-tags?
+                         // Most RSS 2.0 uses <itunes:image href="...">.
+                         // Standard <image> usually has a <url> child. We might miss that with just attributes.
+                         // Let's assume attribute first.
+                         ""
+                     }
+                     if (url.isNotEmpty()) channelImage = url
                 } else if (parser.name == "item" || parser.name == "entry") {
-                    readEntry(parser, feedUrl, channelTitle)?.let { entries.add(it) }
+                    readEntry(parser, feedUrl, channelTitle, channelImage)?.let { entries.add(it) }
                 }
             }
         }
         return entries
     }
 
-    private fun readEntry(parser: XmlPullParser, feedUrl: String, channelTitle: String): PodcastEntity? {
+    private fun readEntry(parser: XmlPullParser, feedUrl: String, channelTitle: String, channelImage: String): PodcastEntity? {
         var title = ""
         var description = ""
         var link = ""
@@ -88,7 +100,7 @@ object RssParser {
             title = channelTitle, 
             episodeTitle = title,
             description = cleanDesc,
-            imageUrl = imageUrl,
+            imageUrl = if (imageUrl.isNotEmpty()) imageUrl else channelImage,
             audioUrl = audioUrl,
             feedUrl = feedUrl,
             pubDate = pubDate,

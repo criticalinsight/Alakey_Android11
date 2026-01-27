@@ -17,6 +17,8 @@ Alakey is a premium, modern podcast application for Android (Targeting Android 1
 ## User Interface Requirements
 - **Flux Aesthetics**: Vibrant, dark-mode focused design with glassmorphism and subtle gradients.
 - **Micro-interactions**: Hover effects, smooth transitions between the library and player.
+- **De-cluttered Experience**: Minimized primary UI noise (e.g., hidden "Add to Queue" button behind long-press) to prioritize content focus.
+- **Hierarchical Clarity**: Clear visual nesting (24dp indentation) for episodes within podcast folders.
 - **Responsive Layout**: Designed for modern Android devices with edge-to-edge support.
 
 ## Technical Requirements

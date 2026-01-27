@@ -8,19 +8,20 @@ Alakey is a premium, modern podcast application for Android featuring a rich "gl
 
 ## ✨ Key Features
 
-*   **Premium Visuals**: Vibrant dark-mode design with glassmorphism and subtle gradients.
-*   **Smart Sleep Timer**: Includes a motion-reset feature—simply move your phone to extend your listening time.
+*   **Premium Visuals**: Vibrant dark-mode design with glassmorphism, subtle gradients, and de-cluttered layouts.
+*   **Smart Sleep Timer**: Includes a unique motion-reset feature—simply move your phone to extend your listening time.
 *   **Offline First**: Automatic and manual episode downloads for seamless offline support.
+*   **Hierarchical Library**: Clean, indented episode listings (24dp) within collapsible podcast folders.
 *   **Smart Playlists**: Intelligent filtering for "Continue", "New", and "Short" episodes.
-*   **Auto-Sync**: Background feed synchronization using WorkManager.
 *   **Marketplace Discovery**: Built-in integration with the iTunes Search API for finding new content.
+*   **Power-User REPL**: Debug and control the app via ADB broadcasts (SQL queries, Fact injection, Playback control).
 
 ## 🏗️ Architecture
 
 The app follows modern Android development best practices:
 - **View**: Jetpack Compose with **Spec-Driven Components** (Pure Functional UI).
-- **Model**: Room Database with **Epochal Time** (Event Sourcing).
-- **Logic**: Pure Logic implementations (De-complected from IO).
+- **Architecture**: **De-complected** design separating logic from IO/Android specifics.
+- **Model**: Room Database with **Fact Registries** (EAV Information Model).
 - **Playback**: Jetpack Media3 (ExoPlayer) wrapper service.
 - **DI**: Hilt for robust dependency management.
 - **Deps**: Gradle Version Catalogs (`libs.versions.toml`) for type-safe dependency management.

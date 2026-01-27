@@ -110,6 +110,7 @@ class UniversalRepository @Inject constructor(
     }
 
     suspend fun savePodcast(p: PodcastEntity) = dao.insertPodcast(p)
+    suspend fun getPodcastById(id: String) = dao.getPodcastById(id)
     suspend fun getPodcastsByTitle(title: String) = dao.getEpisodesByTitle(title)
     suspend fun updateProgress(id: String, progress: Long) = dao.updateProgress(id, progress, System.currentTimeMillis()) 
     suspend fun updateLastPlayed(id: String, timestamp: Long) = dao.updateLastPlayed(id, timestamp)

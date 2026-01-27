@@ -218,7 +218,7 @@ fun MainContent() {
                    }
 
                     val filteredPodcasts = remember(state.podcasts, state.optimisticPodcasts, state.activeFilter) {
-                        val allPodcasts = (state.podcasts + state.optimisticPodcasts).distinctBy { it.feedUrl }
+                        val allPodcasts = (state.podcasts + state.optimisticPodcasts)
                         when(state.activeFilter) {
                             "Continue" -> allPodcasts.filter { p -> 
                                 val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
@@ -281,7 +281,7 @@ fun MainContent() {
                                        // Episodes (if expanded)
                                        if (expandedGroups.contains(title) || state.activeFilter != "All") {
                                            items(items = eps, key = { it.id }) { ep ->
-                                               Box(Modifier.padding(start = 16.dp)) {
+                                               Box(Modifier.padding(start = 24.dp)) {
                                                    GlassPodcastRow(
                                                        spec = PodcastRowSpec(
                                                            id = ep.id,

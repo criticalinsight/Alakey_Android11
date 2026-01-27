@@ -185,7 +185,7 @@ fun GlassPodcastRow(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    PrismaticGlass(Modifier.fillMaxWidth().padding(vertical = 6.dp).height(84.dp).glassShimmer()) {
+    PrismaticGlass(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(72.dp).glassShimmer()) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Row(
                 Modifier
@@ -212,6 +212,10 @@ fun GlassPodcastRow(
                     modifier = Modifier.background(Color.Black.copy(0.9f))
                 ) {
                     DropdownMenuItem(
+                        text = { Text(if (spec.isInQueue) "Remove from Queue" else "Add to Queue", color = Color.White) },
+                        onClick = { onAddToQueue(); showMenu = false }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Play Next", color = Color.White) },
                         onClick = { onPlayNext(); showMenu = false }
                     )
@@ -233,15 +237,6 @@ fun GlassPodcastRow(
             }
             
             Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!spec.isInQueue) {
-                IconButton(onClick = onAddToQueue) {
-                    Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, tint = Color.White.copy(0.7f))
-                }
-            } else {
-                IconButton(onClick = onAddToQueue) {
-                    Icon(Icons.AutoMirrored.Rounded.PlaylistAddCheck, null, tint = Color.Cyan.copy(0.7f))
-                }
-            }
                 if (spec.isDownloaded) {
                     Icon(Icons.Rounded.CheckCircle, null, tint = Color.Green.copy(0.6f), modifier = Modifier.size(16.dp).padding(8.dp))
                 } else {
@@ -268,20 +263,20 @@ fun FluxPlayerContinuum(
 ) {
     
     // Geometry Morphing
-    val cornerRadius = lerp(12f, 32f, expansion).dp
-    val padding = lerp(8f, 0f, expansion).dp
+    val cornerRadius = lerp(12f, 32f, expansion).coerceAtLeast(0f).dp
+    val padding = lerp(8f, 0f, expansion).coerceAtLeast(0f).dp
     
     Box(
         Modifier
             .fillMaxSize()
-            .padding(bottom = lerp(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value, 0f, expansion).dp)
+            .padding(bottom = lerp(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value, 0f, expansion).coerceAtLeast(0f).dp)
     ) {
         // Shared Glass Surface
         PrismaticGlass(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(lerp(0.08f, 1.0f, expansion)) // Approx 64dp to full
+                .fillMaxHeight(lerp(0.08f, 1.0f, expansion).coerceIn(0f, 1f)) // Approx 64dp to full
                 .padding(padding),
             shape = RoundedCornerShape(cornerRadius)
         ) {

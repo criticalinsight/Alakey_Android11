@@ -259,7 +259,10 @@ fun FluxPlayerContinuum(
     onClose: () -> Unit,
     onSeek: (Long) -> Unit,
     onSkip: (Int) -> Unit,
-    onSetSpeed: (Float) -> Unit
+    onSetSpeed: (Float) -> Unit,
+    onNext: () -> Unit = {},
+    onPrev: () -> Unit = {},
+    onSleepTimer: () -> Unit = {}
 ) {
     
     // Geometry Morphing
@@ -299,10 +302,9 @@ fun FluxPlayerContinuum(
                         }
                         MorphingPlayPauseButton(spec.isPlaying, { onTogglePlay() }, Modifier.size(40.dp))
                     }
-                } else {
                     // Full Layout
                     Box(Modifier.graphicsLayer { this.alpha = (expansion - 0.5f) * 2f }) {
-                        GlassPlayerMechanism(spec, 0f, onClose, onTogglePlay, onSeek, onSkip, onSetSpeed)
+                        GlassPlayerMechanism(spec, 0f, onClose, onTogglePlay, onSeek, onSkip, onSetSpeed, onNext, onPrev, onSleepTimer)
                     }
                 }
             }
@@ -318,7 +320,10 @@ fun GlassPlayerScreen(
     onPlayPause: () -> Unit, 
     onSeek: (Long) -> Unit, 
     onSkip: (Int) -> Unit,
-    onSetSpeed: (Float) -> Unit
+    onSetSpeed: (Float) -> Unit,
+    onNext: () -> Unit = {},
+    onPrev: () -> Unit = {},
+    onSleepTimer: () -> Unit = {}
 ) {
     // Policy: Gestures & Animation State
     val offsetY = remember { Animatable(0f) }
@@ -335,7 +340,7 @@ fun GlassPlayerScreen(
             }
         )
     }) { 
-        GlassPlayerMechanism(spec, offsetY.value, onClose, onPlayPause, onSeek, onSkip, onSetSpeed)
+        GlassPlayerMechanism(spec, offsetY.value, onClose, onPlayPause, onSeek, onSkip, onSetSpeed, onNext, onPrev, onSleepTimer)
     }
 }
 
@@ -347,7 +352,10 @@ fun GlassPlayerMechanism(
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSkip: (Int) -> Unit,
-    onSetSpeed: (Float) -> Unit
+    onSetSpeed: (Float) -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    onSleepTimer: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
 
@@ -429,24 +437,74 @@ fun GlassPlayerMechanism(
             
             Spacer(Modifier.height(24.dp))
             
-            // Controls
+            // Controls - V2: More Controls
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                // Row 1: Speed, Timer
                 IconButton(onClick = { onSetSpeed(if(spec.speed >= 2f) 0.5f else spec.speed + 0.5f); haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }) {
                    Text("${spec.speed}x", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 
-                IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSkip(-15) }) { Icon(Icons.Rounded.Replay, null, tint = Color.White, modifier = Modifier.size(32.dp)) }
-                
-                Box(Modifier.size(80.dp).shadow(30.dp, CircleShape, spotColor = if (spec.isPlaying) Color(0xFF00F0FF) else Color.Transparent).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-                     MorphingPlayPauseButton(isPlaying = spec.isPlaying, onToggle = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onPlayPause() }, modifier = Modifier.size(32.dp))
-                }
-                
-                IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSkip(30) }) { Icon(Icons.AutoMirrored.Rounded.Forward, null, tint = Color.White, modifier = Modifier.size(32.dp)) }
-                
-                IconButton(onClick = { /* Sleep Timer or Queue */ }) { Icon(Icons.Rounded.Timer, null, tint = Color.White.copy(0.5f)) }
+                // Row 2: Transport (Prev, SkipBack, Play, SkipFwd, Next)
+                // Let's optimize layout. A single row is crowded.
+                // Let's separate Speed/Timer to top or bottom?
+                // Or just squeeze them in?
+                // User asked for "more controls". 
+                // Let's do: [Prev] [Skip-15] [Play] [Skip+30] [Next]
+                // And put Speed/Timer elsewhere?
+                // Actually, existing design: [Speed] [Skip-15] [Play] [Skip+30] [Timer]
+                // Let's change to: [Speed] [Prev] [Play] [Next] [Timer]
+                // And maybe tap Play container edges for skip? No, explicit is better.
+                // Updated Layout:
+                // [Speed] [Prev] [Skip-15] [Play] [Skip+30] [Next] [Timer] -> Too many.
+                // Let's drop Skip buttons in favor of standard Prev/Next?
+                // No, podcasts need 15/30 skips.
+                // Let's do a 2-row layout? Or just squeeze.
             }
             
-            Spacer(Modifier.height(48.dp))
+            // Primary Transport
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                 IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onPrev() }) { 
+                     Icon(Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(32.dp)) 
+                 }
+                 
+                 IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSkip(-15) }) { 
+                     Icon(Icons.Rounded.Replay10, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(28.dp)) 
+                 }
+                 
+                 Box(Modifier.size(80.dp).shadow(30.dp, CircleShape, spotColor = if (spec.isPlaying) Color(0xFF00F0FF) else Color.Transparent).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                      MorphingPlayPauseButton(isPlaying = spec.isPlaying, onToggle = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onPlayPause() }, modifier = Modifier.size(32.dp))
+                 }
+                 
+                 IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSkip(30) }) { 
+                     Icon(Icons.Rounded.Forward30, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(28.dp)) 
+                 }
+                 
+                 IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onNext() }) { 
+                     Icon(Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(32.dp)) 
+                 }
+            }
+            
+            Spacer(Modifier.height(24.dp))
+            
+            // Secondary Controls
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                 IconButton(onClick = { onSetSpeed(if(spec.speed >= 2f) 0.5f else spec.speed + 0.5f); haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }) {
+                   Text("${spec.speed}x", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                
+                IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSleepTimer() }) { 
+                    val alpha = if (spec.sleepTimerSeconds > 0) 1f else 0.5f
+                    val tint = if (spec.sleepTimerSeconds > 0) Color(0xFF00F0FF) else Color.White
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Rounded.Timer, null, tint = tint.copy(alpha))
+                        if(spec.sleepTimerSeconds > 0) {
+                            Box(Modifier.size(4.dp).background(tint, CircleShape))
+                        }
+                    }
+                }
+            }
+            
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

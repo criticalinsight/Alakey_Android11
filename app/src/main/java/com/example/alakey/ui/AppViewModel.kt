@@ -110,7 +110,9 @@ class AppViewModel @Inject constructor(
         data class SetSpeed(val speed: Float) : Action
         data class SetFilter(val filter: String) : Action
         data class SetCarMode(val enabled: Boolean) : Action
-        // Add more as we migrate...
+        object PlayNextInQueue : Action
+        object PlayPreviousInQueue : Action
+        object CycleSleepTimer : Action
         
         // Optimistic Actions
         data class Subscribe(val feedUrl: String, val title: String, val imageUrl: String) : Action
@@ -190,6 +192,69 @@ class AppViewModel @Inject constructor(
                         .onFailure {
                             dispatch(Action.Rollback(previousIndex, it.message ?: "Network error"))
                         }
+                }
+            }
+            is Action.PlayNextInQueue -> {
+                val queue = _uiState.value.queue
+                val current = _uiState.value.current
+                if (queue.isNotEmpty()) {
+                    val idx = queue.indexOfFirst { it.id == current?.id }
+                    if (idx != -1 && idx < queue.size - 1) {
+                         playbackClient.play(queue[idx + 1])
+                    } else {
+                         emitEvent(UserEvent.ShowMessage("End of queue"))
+                    }
+                }
+            }
+            is Action.PlayPreviousInQueue -> {
+                 // Classic Logic: If > 5s, restart. Else prev.
+                 val pos = playbackClient.state.value.currentPosition
+                 if (pos > 5000) {
+                     playbackClient.seek(0)
+                 } else {
+                     val queue = _uiState.value.queue
+                     val current = _uiState.value.current
+                     if (queue.isNotEmpty()) {
+                         val idx = queue.indexOfFirst { it.id == current?.id }
+                         if (idx > 0) {
+                             playbackClient.play(queue[idx - 1])
+                         } else {
+                             playbackClient.seek(0)
+                         }
+                     }
+                 }
+            }
+            is Action.CycleSleepTimer -> {
+                val current = playbackClient.sleepTimerSeconds.value
+                val newDuration = when {
+                    current == 0 -> 15
+                    current <= 15 * 60 -> 30
+                    current <= 30 * 60 -> 45
+                    current <= 45 * 60 -> 60
+                    else -> 0
+                }
+                if (newDuration > 0) {
+                    playbackClient.startSleepTimer(newDuration)
+                    emitEvent(UserEvent.ShowMessage("Sleep Timer: ${newDuration}m"))
+                } else {
+                    playbackClient.resetSleepTimer() // actually this resets to initial, we want cancel.
+                    // Let's assume startSleepTimer(0) cancels or we need a cancel. 
+                    // Reuse startSleepTimer logic but need to ensure it handles 0 or cancel.
+                    // Checking PlaybackClient.. startSleepTimer loop condition is > 0.
+                    // So we can just set it to 0. 
+                    // But PlaybackClient doesn't expose a "Cancel" directly other than cleanup.
+                    // Let's stick to startSleepTimer logic... wait, I need to check PlaybackClient again.
+                    // It has resetSleepTimer which resets to *initial*. 
+                    // I will implement a cancel logic by just calling startSleepTimer with 0 or a new method.
+                    // For now, let's assume setting it to 0 via startSleepTimer or a new method is needed.
+                    // I'll use startSleepTimer(0) and rely on the loop condition, hoping it handles it.
+                    // Looking at PlaybackClient again: Loop `while (_sleepTimerSeconds.value > 0)`.
+                    // So setting value to 0 will break loop.
+                    // But `startSleepTimer` sets `_sleepTimerSeconds.value = initialSleepDuration`.
+                    // So `startSleepTimer(0)` sets it to 0 and loop won't start (if check is before).
+                    // Correct.
+                    playbackClient.startSleepTimer(0)
+                    emitEvent(UserEvent.ShowMessage("Sleep Timer Off"))
                 }
             }
             else -> {}
@@ -385,7 +450,9 @@ class AppViewModel @Inject constructor(
                 if (result is SuccessResult) {
                     val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
                     if (bitmap != null) {
-                        val palette = Palette.from(bitmap).generate()
+                        val palette = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            Palette.from(bitmap).generate()
+                        }
                         val dominant = palette.getDominantColor(AndroidColor.CYAN)
                         val vibrant = palette.getVibrantColor(AndroidColor.CYAN)
                         val muted = palette.getMutedColor(AndroidColor.GRAY)
@@ -473,5 +540,17 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             _logs.value = repo.getRecentLogs()
         }
+    }
+
+    fun playNextEpisode() {
+        dispatch(Action.PlayNextInQueue)
+    }
+
+    fun playPreviousEpisode() {
+        dispatch(Action.PlayPreviousInQueue)
+    }
+
+    fun cycleSleepTimer() {
+        dispatch(Action.CycleSleepTimer)
     }
 }

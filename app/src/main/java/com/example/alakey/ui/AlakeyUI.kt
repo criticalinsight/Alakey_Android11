@@ -15,9 +15,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -27,6 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -123,241 +129,232 @@ fun MainContent() {
         FluxBackground(amplitude = state.amplitude, color = Color(state.dominantColor))
         // Debug Trigger (Invisible top left)
         Box(Modifier.size(64.dp).align(Alignment.TopStart).zIndex(10f).clickable { showDebug = !showDebug })
+        // Dynamic Header Area
+        val listState = rememberLazyListState()
+        val activeScreen = state.navigationStack.last()
         
         Column(Modifier.fillMaxSize()) {
-           Row(
-               Modifier
-                   .fillMaxWidth()
-                   .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp)
-                   .padding(horizontal = 24.dp), 
-               horizontalArrangement = Arrangement.SpaceBetween, 
-               verticalAlignment = Alignment.CenterVertically
-           ) { 
-               Row(
-                   Modifier
-                       .clip(RoundedCornerShape(12.dp))
-                       .background(Color.White.copy(0.1f))
-                       .padding(4.dp)
-               ) {
-                   Box(
-                       Modifier
-                           .clip(RoundedCornerShape(8.dp))
-                           .background(if (state.navigationStack.last() == AppViewModel.Screen.Library) Color.Cyan.copy(0.3f) else Color.Transparent)
-                           .pressScale()
-                           .clickable { vm.navigate(AppViewModel.Screen.Library) }
-                           .padding(horizontal = 16.dp, vertical = 8.dp)
-                   ) {
-                        Text("Library", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (state.navigationStack.last() == AppViewModel.Screen.Inbox) Color.Cyan.copy(0.3f) else Color.Transparent)
-                            .pressScale()
-                            .clickable { vm.navigate(AppViewModel.Screen.Inbox) } 
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Text("Inbox", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Box(
-                       Modifier
-                           .clip(RoundedCornerShape(8.dp))
-                           .background(if (state.navigationStack.last() == AppViewModel.Screen.Marketplace) Color.Cyan.copy(0.3f) else Color.Transparent)
-                           .pressScale()
-                           .clickable { vm.navigate(AppViewModel.Screen.Marketplace) }
-                           .padding(horizontal = 16.dp, vertical = 8.dp)
-                   ) {
-                       Text("Marketplace", color = Color.White, fontWeight = FontWeight.Bold)
-                   }
-                }
-                
-                // Radio FAB
+            // Header (Title + Actions)
+            Row(
+           Modifier
+               .fillMaxWidth()
+               .padding(top = 48.dp, start = 24.dp, end = 24.dp, bottom = 16.dp),
+           horizontalArrangement = Arrangement.SpaceBetween,
+           verticalAlignment = Alignment.CenterVertically
+        ) {
+            val title = activeScreen.name
+            Text(
+                title, 
+                color = Color.White, 
+                style = MaterialTheme.typography.displaySmall, 
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.shadow(20.dp, spotColor = Color(0xFF00F0FF))
+            )
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                 // Radio FAB (Mini)
                 Box(
                     Modifier
-                        .padding(start = 16.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(Color(0xFF00F0FF), Color(0xFF0055FF))))
-                        .pressScale()
                         .clickable { vm.playRadio() }
-                        .padding(12.dp)
+                        .padding(8.dp)
                 ) {
-                    Icon(Icons.Rounded.Radio, null, tint = Color.White)
+                    Icon(Icons.Rounded.Radio, null, tint = Color.White, modifier = Modifier.size(20.dp))
                 }
                 
-                Row {
-                    IconButton(onClick = { vm.setCarMode(true) }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape).pressScale()) {
-                        Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White)
+                Spacer(Modifier.width(12.dp))
+                
+                IconButton(onClick = { vm.setCarMode(true) }, modifier = Modifier.background(Color.White.copy(0.1f), CircleShape)) {
+                    Icon(Icons.Rounded.DirectionsCar, null, tint = Color.White)
+                }
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = { showAddDialog = true }, modifier = Modifier.background(Color.White.copy(0.1f), CircleShape)) { 
+                    Icon(Icons.Rounded.Add, null, tint = Color.White) 
+                }
+            }
+        }        
+    
+    AnimatedContent(
+        targetState = activeScreen,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
+        },
+        label = "screen_transition",
+        modifier = Modifier.weight(1f)
+    ) { currentScreen ->
+        if (currentScreen == AppViewModel.Screen.Library) {
+           val filters = listOf("All", "Continue", "New", "Short")
+
+           Column(Modifier.fillMaxSize()) {
+               LazyRow(
+               modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+               contentPadding = PaddingValues(horizontal = 24.dp),
+               horizontalArrangement = Arrangement.spacedBy(8.dp)
+           ) {
+               items(filters) { f ->
+                   val isActive = state.activeFilter == f
+                   Box(Modifier.clip(RoundedCornerShape(50)).background(if(isActive) Color(0xFF00F0FF).copy(0.3f) else Color.White.copy(0.1f)).pressScale().clickable { vm.setFilter(f) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                       Text(f, color = if(isActive) Color(0xFF00F0FF) else Color.White.copy(0.7f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
+                   }
+               }
+           }
+
+            val filteredPodcasts = remember(state.podcasts, state.optimisticPodcasts, state.activeFilter) {
+                val allPodcasts = (state.podcasts + state.optimisticPodcasts)
+                when(state.activeFilter) {
+                    "Continue" -> allPodcasts.filter { p -> 
+                        val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
+                        p.progress > 0 && p.progress.toDouble() < (duration * 0.95)
+                    }.sortedByDescending { it.lastPlayed }
+                    "New" -> allPodcasts.filter { p ->
+                           val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
+                           p.progress.toDouble() < (duration * 0.95)
+                    }.sortedByDescending { it.pubDate } 
+                    "Short" -> allPodcasts.filter { 
+                        val duration = if (it.duration > 0) it.duration.toDouble() else Double.MAX_VALUE
+                        it.progress.toDouble() < (duration * 0.95) && it.duration in 1..1200 
                     }
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(onClick = { showAddDialog = true }, modifier = Modifier.background(Color.White.copy(0.1f), androidx.compose.foundation.shape.CircleShape).pressScale()) { 
-                        Icon(Icons.Rounded.Add, null, tint = Color.White) 
+                    else -> allPodcasts.filter { p ->
+                        val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
+                        p.progress.toDouble() < (duration * 0.95)
                     }
                 }
-           }
+            }
+           val expandedGroups = remember { mutableStateListOf<String>() }
            
-            val activeScreen = state.navigationStack.last()
-            
-            AnimatedContent(
-                targetState = activeScreen,
-                transitionSpec = {
-                    (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
-                },
-                label = "screen_transition",
-                modifier = Modifier.weight(1f)
-            ) { currentScreen ->
-                if (currentScreen == AppViewModel.Screen.Library) {
-                   val filters = listOf("All", "Continue", "New", "Short")
-                   
-                   Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                       filters.forEach { f ->
-                           val isActive = state.activeFilter == f
-                           Box(Modifier.clip(RoundedCornerShape(50)).background(if(isActive) Color(0xFF00F0FF).copy(0.3f) else Color.White.copy(0.1f)).pressScale().clickable { vm.setFilter(f) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                               Text(f, color = if(isActive) Color(0xFF00F0FF) else Color.White.copy(0.7f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
-                           }
-                       }
-                   }
-
-                    val filteredPodcasts = remember(state.podcasts, state.optimisticPodcasts, state.activeFilter) {
-                        val allPodcasts = (state.podcasts + state.optimisticPodcasts)
-                        when(state.activeFilter) {
-                            "Continue" -> allPodcasts.filter { p -> 
-                                val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
-                                p.progress > 0 && p.progress.toDouble() < (duration * 0.95)
-                            }.sortedByDescending { it.lastPlayed }
-                            "New" -> allPodcasts.filter { p ->
-                                   val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
-                                   p.progress.toDouble() < (duration * 0.95)
-                            }.sortedByDescending { it.pubDate } 
-                            "Short" -> allPodcasts.filter { 
-                                val duration = if (it.duration > 0) it.duration.toDouble() else Double.MAX_VALUE
-                                it.progress.toDouble() < (duration * 0.95) && it.duration in 1..1200 
-                            }
-                            else -> allPodcasts.filter { p ->
-                                val duration = if (p.duration > 0) p.duration.toDouble() else Double.MAX_VALUE
-                                p.progress.toDouble() < (duration * 0.95)
-                            }
+           AnimatedContent(
+               targetState = state.activeFilter,
+               transitionSpec = {
+                   (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
+               },
+               label = "filter_transition",
+               modifier = Modifier.weight(1f)
+            ) { filter ->
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)
+                ) {
+                    // Hero Item
+                    if (filter == "All") {
+                        item {
+                            val heroPodcast = state.current ?: state.podcasts.maxByOrNull { it.lastPlayed } ?: state.podcasts.firstOrNull()
+                            SpotlightHero(podcast = heroPodcast, onClick = { if (heroPodcast != null) { vm.play(heroPodcast); vm.setPlayerOpen(true) } })
+                            Spacer(Modifier.height(16.dp))
                         }
                     }
-                   val expandedGroups = remember { mutableStateListOf<String>() }
-                   
-                   AnimatedContent(
-                       targetState = state.activeFilter,
-                       transitionSpec = {
-                           (fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f)).togetherWith(fadeOut(animationSpec = tween(200)))
-                       },
-                       label = "filter_transition",
-                       modifier = Modifier.weight(1f)
-                   ) { filter ->
-                       LazyColumn(contentPadding = PaddingValues(top = 0.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
-                           if (filteredPodcasts.isEmpty()) {
-                               item { 
-                                   Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
-                                       Column(horizontalAlignment = Alignment.CenterHorizontally) { 
-                                           Icon(Icons.Rounded.FilterListOff, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
-                                           Spacer(Modifier.height(16.dp))
-                                           NebulaText("No episodes found", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
-                                       } 
-                                   } 
+
+                    if (filteredPodcasts.isEmpty()) {
+                       item { 
+                           Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
+                               Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                                   Icon(Icons.Rounded.FilterListOff, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
+                                   Spacer(Modifier.height(16.dp))
+                                   NebulaText("No episodes found", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
+                               } 
+                           } 
+                       }
+                   } else {
+                       val grouped = if(state.activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
+                       
+                       grouped.forEach { (title, eps) ->
+                           if (eps.isNotEmpty()) {
+                               // Header
+                               item(key = "header_$title") {
+                                   GlassFolderHeader(
+                                       title = title,
+                                       imageUrl = eps.first().imageUrl,
+                                       count = eps.size,
+                                       isExpanded = expandedGroups.contains(title),
+                                       onToggle = { 
+                                           if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
+                                       },
+                                       onUnsubscribe = { vm.unsubscribe(title) }
+                                   )
                                }
-                           } else {
-                               val grouped = if(state.activeFilter == "All") filteredPodcasts.groupBy { it.title } else mapOf("Results" to filteredPodcasts)
                                
-                               grouped.forEach { (title, eps) ->
-                                   if (eps.isNotEmpty()) {
-                                       // Header
-                                       item(key = "header_$title") {
-                                           GlassFolderHeader(
-                                               title = title,
-                                               imageUrl = eps.first().imageUrl,
-                                               count = eps.size,
-                                               isExpanded = expandedGroups.contains(title),
-                                               onToggle = { 
-                                                   if (expandedGroups.contains(title)) expandedGroups.remove(title) else expandedGroups.add(title) 
+                               // Episodes (if expanded)
+                               if (expandedGroups.contains(title) || state.activeFilter != "All") {
+                                   items(items = eps, key = { it.id }) { ep ->
+                                       Box(Modifier.padding(start = 24.dp)) {
+                                           GlassPodcastRow(
+                                               spec = PodcastRowSpec(
+                                                   id = ep.id,
+                                                   title = ep.episodeTitle,
+                                                   subtitle = ep.title,
+                                                   imageUrl = ep.imageUrl,
+                                                   isDownloaded = ep.isDownloaded,
+                                                   isInQueue = ep.isInQueue,
+                                                   progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
+                                               ),
+                                               onClick = { vm.play(ep); vm.setPlayerOpen(true) },
+                                               onDownload = { vm.downloadEpisode(ep.id) },
+                                               onAddToQueue = { 
+                                                   if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
                                                },
-                                               onUnsubscribe = { vm.unsubscribe(title) }
+                                               onMarkPlayed = { vm.markPlayed(ep) },
+                                               onArchiveOlder = { vm.markOlderPlayed(ep) },
+                                               onDeleteDownload = { vm.deleteDownload(ep) },
+                                               onPlayNext = { vm.playNext(ep) }
                                            )
-                                       }
-                                       
-                                       // Episodes (if expanded)
-                                       if (expandedGroups.contains(title) || state.activeFilter != "All") {
-                                           items(items = eps, key = { it.id }) { ep ->
-                                               Box(Modifier.padding(start = 24.dp)) {
-                                                   GlassPodcastRow(
-                                                       spec = PodcastRowSpec(
-                                                           id = ep.id,
-                                                           title = ep.episodeTitle,
-                                                           subtitle = ep.title,
-                                                           imageUrl = ep.imageUrl,
-                                                           isDownloaded = ep.isDownloaded,
-                                                           isInQueue = ep.isInQueue,
-                                                           progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
-                                                       ),
-                                                       onClick = { vm.play(ep); vm.setPlayerOpen(true) },
-                                                       onDownload = { vm.downloadEpisode(ep.id) },
-                                                       onAddToQueue = { 
-                                                           if (ep.isInQueue) vm.removeFromQueue(ep) else vm.addToQueue(ep)
-                                                       },
-                                                       onMarkPlayed = { vm.markPlayed(ep) },
-                                                       onArchiveOlder = { vm.markOlderPlayed(ep) },
-                                                       onDeleteDownload = { vm.deleteDownload(ep) },
-                                                       onPlayNext = { vm.playNext(ep) }
-                                                   )
-                                               }
-                                           }
                                        }
                                    }
                                }
                            }
                        }
                    }
-                } else if (currentScreen == AppViewModel.Screen.Inbox) {
-                  // INBOX VIEW
-                  val inbox = state.inbox
-                  LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
-                      if (inbox.isEmpty()) {
-                           item { 
-                               Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
-                                   Column(horizontalAlignment = Alignment.CenterHorizontally) { 
-                                       Icon(Icons.Rounded.Inbox, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
-                                       Spacer(Modifier.height(16.dp))
-                                       NebulaText("All caught up!", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
-                                   } 
-                               } 
-                           }
-                      } else {
-                          items(items = inbox, key = { it.id }) { ep ->
-                              Box(Modifier.padding(bottom=8.dp)) {
-                                  GlassPodcastRow(
-                                      spec = PodcastRowSpec(
-                                          id = ep.id,
-                                          title = ep.episodeTitle,
-                                          subtitle = ep.title,
-                                          imageUrl = ep.imageUrl,
-                                          isDownloaded = ep.isDownloaded,
-                                          isInQueue = ep.isInQueue,
-                                          progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
-                                      ),
-                                      onClick = { vm.play(ep); vm.setPlayerOpen(true) },
-                                      onDownload = { vm.downloadEpisode(ep.id) },
-                                      onAddToQueue = { 
-                                          vm.addToQueue(ep) 
-                                      },
-                                      onMarkPlayed = { vm.markPlayed(ep) },
-                                      onArchiveOlder = { vm.markOlderPlayed(ep) },
-                                      onDeleteDownload = { vm.deleteDownload(ep) },
-                                      onPlayNext = { vm.playNext(ep) }
-                                  )
-                              }
-                          }
+               }
+           }
+           } // Closing brace for the added Column
+         } else if (currentScreen == AppViewModel.Screen.Inbox) {
+          // INBOX VIEW
+          val inbox = state.inbox
+          LazyColumn(contentPadding = PaddingValues(top = 24.dp, bottom = 120.dp, start = 16.dp, end = 16.dp)) {
+              if (inbox.isEmpty()) {
+                   item { 
+                       Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { 
+                           Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                               Icon(Icons.Rounded.Inbox, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(48.dp))
+                               Spacer(Modifier.height(16.dp))
+                               NebulaText("All caught up!", MaterialTheme.typography.bodyLarge, glowColor = Color.Transparent) 
+                           } 
+                       } 
+                   }
+              } else {
+                  items(items = inbox, key = { it.id }) { ep ->
+                      Box(Modifier.padding(bottom=8.dp)) {
+                          GlassPodcastRow(
+                              spec = PodcastRowSpec(
+                                  id = ep.id,
+                                  title = ep.episodeTitle,
+                                  subtitle = ep.title,
+                                  imageUrl = ep.imageUrl,
+                                  isDownloaded = ep.isDownloaded,
+                                  isInQueue = ep.isInQueue,
+                                  progress = if(ep.duration>0) ep.progress.toFloat()/ep.duration else 0f
+                              ),
+                              onClick = { vm.play(ep); vm.setPlayerOpen(true) },
+                              onDownload = { vm.downloadEpisode(ep.id) },
+                              onAddToQueue = { 
+                                  vm.addToQueue(ep) 
+                              },
+                              onMarkPlayed = { vm.markPlayed(ep) },
+                              onArchiveOlder = { vm.markOlderPlayed(ep) },
+                              onDeleteDownload = { vm.deleteDownload(ep) },
+                              onPlayNext = { vm.playNext(ep) }
+                          )
                       }
                   }
-           } else {
-               GlassMarketplace(onSubscribe = { query -> 
-                   vm.marketplaceSubscribe(query)
-               })
-            }
-        }
+              }
+          }
+   } else {
+       GlassMarketplace(onSubscribe = { query -> 
+           vm.marketplaceSubscribe(query)
+       })
     }
+}
+    
+        }
     
     // --- Flux Player Continuum ---
     val expansion by animateFloatAsState(
@@ -389,8 +386,21 @@ fun MainContent() {
                 onClose = { vm.setPlayerOpen(false) },
                 onSeek = { vm.seek(it) },
                 onSkip = { vm.skip(it) },
-                onSetSpeed = { vm.setPlaybackSpeed(it) }
+                onSetSpeed = { vm.setPlaybackSpeed(it) },
+                onNext = { vm.playNextEpisode() },
+                onPrev = { vm.playPreviousEpisode() },
+                onSleepTimer = { vm.cycleSleepTimer() }
             )
+        }
+        
+        // Glass Dock (Bottom Navigation)
+        if (!state.isPlayerOpen && !state.isCarMode) {
+             Box(Modifier.align(Alignment.BottomCenter)) {
+                 GlassDock(
+                     currentScreen = activeScreen,
+                     onNavigate = { vm.navigate(it) }
+                 )
+             }
         }
     }
     
@@ -435,6 +445,8 @@ fun MainContent() {
         )
     }
 }
+
+
 
 @Composable
 fun AddPodcastDialog(

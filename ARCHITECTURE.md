@@ -45,6 +45,8 @@ graph TD
 
 ## Key Design Patterns
 - **De-complected Architecture**: Heavy emphasis on separating "Intent" from "Mechanism". Components like `PlaybackClient` and `RssParser` are decoupled from Android lifecycle and IO where possible.
+- **Value as State (State Hydration)**: The `AppViewModel` implements a robust hydration strategy that resolves the "current" podcast entity from all available sources (Library, Queue, Inbox, Search), ensuring UI stability during playback transitions.
+- **Event-Driven Continuity**: A `playbackEnded` channel in the `PlaybackClient` allows the high-level ViewModel to orchestrate queue progression without complecting the low-level player service.
 - **Information Model (Facts)**: Implements an EAV-style fact registry (`FactEntity`) for flexible, schema-less data storage.
 - **Repository Pattern**: Centralized data access via `UniversalRepository`.
 - **Reactive Programming**: Extensive use of `StateFlow` and `SharedFlow`.

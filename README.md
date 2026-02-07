@@ -9,10 +9,11 @@ Alakey is a premium, modern podcast application for Android featuring a rich "gl
 ## ✨ Key Features
 
 *   **Premium Visuals**: Vibrant dark-mode design with glassmorphism, subtle gradients, and de-cluttered layouts.
+*   **Hero Action Center**: Quick-access controls on the library hero—Play, Queue, Navigation, and Sleep Timer status directly on the card.
+*   **Smart Playback Continuity**: Automatic progression through your queue with a seamless handoff between tracks.
 *   **Smart Sleep Timer**: Includes a unique motion-reset feature—simply move your phone to extend your listening time.
 *   **Offline First**: Automatic and manual episode downloads for seamless offline support.
-*   **Hierarchical Library**: Clean, indented episode listings (24dp) within collapsible podcast folders.
-*   **Smart Playlists**: Intelligent filtering for "Continue", "New", and "Short" episodes.
+*   **Robust Player Visibility**: Universal player state management ensures the player appears instantly even for external search results.
 *   **Marketplace Discovery**: Built-in integration with the iTunes Search API for finding new content.
 *   **Power-User REPL**: Debug and control the app via ADB broadcasts (SQL queries, Fact injection, Playback control).
 

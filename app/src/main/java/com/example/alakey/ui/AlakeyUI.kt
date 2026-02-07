@@ -239,7 +239,17 @@ fun MainContent() {
                     if (filter == "All") {
                         item {
                             val heroPodcast = state.current ?: state.podcasts.maxByOrNull { it.lastPlayed } ?: state.podcasts.firstOrNull()
-                            SpotlightHero(podcast = heroPodcast, onClick = { if (heroPodcast != null) { vm.play(heroPodcast); vm.setPlayerOpen(true) } })
+                            
+                            SpotlightHero(
+                                podcast = heroPodcast, 
+                                timerSeconds = state.sleepTimerSeconds,
+                                onPlay = { if (heroPodcast != null) vm.dispatch(AppViewModel.Action.Play(heroPodcast)) },
+                                onQueue = { if (heroPodcast != null) vm.addToQueue(heroPodcast) },
+                                onPrev = { vm.dispatch(AppViewModel.Action.PlayPreviousInQueue) },
+                                onNext = { vm.dispatch(AppViewModel.Action.PlayNextInQueue) },
+                                onTimer = { vm.dispatch(AppViewModel.Action.CycleSleepTimer) },
+                                onClick = { if (heroPodcast != null) vm.setPlayerOpen(true) }
+                            )
                             Spacer(Modifier.height(16.dp))
                         }
                     }

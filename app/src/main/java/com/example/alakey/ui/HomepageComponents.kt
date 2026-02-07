@@ -12,7 +12,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.LibraryBooks
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -111,6 +116,12 @@ private fun DockItem(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 @Composable
 fun SpotlightHero(
     podcast: PodcastEntity?, // Can be null if nothing playing/featured
+    timerSeconds: Int = 0,
+    onPlay: () -> Unit,
+    onQueue: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onTimer: () -> Unit,
     onClick: () -> Unit
 ) {
     if (podcast == null) return
@@ -118,7 +129,7 @@ fun SpotlightHero(
     Box(
         Modifier
             .fillMaxWidth()
-            .height(420.dp) // Taller for more immersive feel
+            .height(440.dp) // Slightly taller to accommodate more controls
             .padding(16.dp)
             .clip(RoundedCornerShape(32.dp))
             .clickable { onClick() }
@@ -133,18 +144,96 @@ fun SpotlightHero(
         // Gradient Scrim
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.7f), Color.Black))))
 
+        // Timer Badge (Top Right)
+        if (timerSeconds > 0) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.6f))
+                    .border(1.dp, Color(0xFF00F0FF).copy(0.5f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "${timerSeconds / 60}:${(timerSeconds % 60).toString().padStart(2, '0')}",
+                    color = Color(0xFF00F0FF),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
         // Content
         Column(
             Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Bottom
         ) {
-            Box(Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF00F0FF)).padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("RESUME", color = Color.Black, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            Box(Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF00F0FF).copy(0.9f)).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Text("NEBULA FEATURE", color = Color.Black, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
             }
             Spacer(Modifier.height(16.dp))
-            Text(podcast.episodeTitle, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 3)
-            Spacer(Modifier.height(8.dp))
-            Text(podcast.title, color = Color.White.copy(0.7f), style = MaterialTheme.typography.titleMedium)
+            Text(podcast.episodeTitle, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Spacer(Modifier.height(4.dp))
+            Text(podcast.title, color = Color.White.copy(0.7f), style = MaterialTheme.typography.titleSmall)
+            
+            Spacer(Modifier.height(24.dp))
+            
+            Row(
+                Modifier.fillMaxWidth(), 
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Previous Button
+                    IconButton(icon = androidx.compose.material.icons.Icons.Rounded.SkipPrevious, onClick = onPrev)
+                    
+                    // Play Button
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.White)
+                            .clickable { onPlay() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(androidx.compose.material.icons.Icons.Rounded.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(24.dp))
+                    }
+
+                    // Next Button
+                    IconButton(icon = androidx.compose.material.icons.Icons.Rounded.SkipNext, onClick = onNext)
+                }
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Timer Button
+                    IconButton(
+                        icon = androidx.compose.material.icons.Icons.Rounded.Timer, 
+                        isSelected = timerSeconds > 0,
+                        onClick = onTimer
+                    )
+                    
+                    // Queue Button
+                    IconButton(icon = androidx.compose.material.icons.Icons.Rounded.PlaylistAdd, onClick = onQueue)
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun IconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, 
+    isSelected: Boolean = false,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(if (isSelected) Color(0xFF00F0FF).copy(0.2f) else Color.White.copy(0.1f))
+            .border(1.dp, if (isSelected) Color(0xFF00F0FF).copy(0.4f) else Color.White.copy(0.1f), CircleShape)
+            .clickable { onClick() }
+            .padding(10.dp)
+    ) {
+        Icon(icon, null, tint = if (isSelected) Color(0xFF00F0FF) else Color.White, modifier = Modifier.size(22.dp))
     }
 }

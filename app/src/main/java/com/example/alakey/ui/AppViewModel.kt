@@ -53,7 +53,8 @@ class AppViewModel @Inject constructor(
         val amplitude: Float = 0f,
         val dominantColor: Int = AndroidColor.CYAN,
         val vibrantColor: Int = AndroidColor.CYAN,
-        val mutedColor: Int = AndroidColor.GRAY
+        val mutedColor: Int = AndroidColor.GRAY,
+        val sleepTimerSeconds: Int = 0
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -140,6 +141,7 @@ class AppViewModel @Inject constructor(
             is Action.SetPlayerOpen -> updateState { it.copy(isPlayerOpen = action.isOpen) }
             is Action.SetFilter -> updateState { it.copy(activeFilter = action.filter) }
             is Action.SetCarMode -> updateState { it.copy(isCarMode = action.enabled) }
+            is Action.Play -> updateState { it.copy(current = action.podcast, isPlayerOpen = true) }
             is Action.Subscribe -> updateState {
                 val placeholder = PodcastEntity(
                     id = "optimistic_${action.feedUrl.hashCode()}",
@@ -262,6 +264,13 @@ class AppViewModel @Inject constructor(
     }
 
     init {
+        // Playback Continuity
+        viewModelScope.launch {
+            playbackClient.playbackEnded.collect {
+                playNextEpisode()
+            }
+        }
+
         // Hydrate Library
         viewModelScope.launch {
             repo.library.collect { podcasts ->
@@ -270,7 +279,9 @@ class AppViewModel @Inject constructor(
                 val currentId = playbackClient.state.value.currentMediaId
                 if (currentId != null) {
                     val p = podcasts.find { it.id == currentId }
-                    updateState { it.copy(current = p) }
+                    if (p != null) {
+                        updateState { it.copy(current = p) }
+                    }
                 }
             }
         }
@@ -291,7 +302,11 @@ class AppViewModel @Inject constructor(
         // Hydrate Playback State
         viewModelScope.launch {
             playbackClient.state.collect { pbState ->
-                val podcast = _uiState.value.podcasts.find { it.id == pbState.currentMediaId }
+                val allKnown = _uiState.value.podcasts + _uiState.value.queue + _uiState.value.inbox + _uiState.value.optimisticPodcasts
+                val currentInState = _uiState.value.current
+                val podcast = allKnown.find { it.id == pbState.currentMediaId } 
+                    ?: if (currentInState?.id == pbState.currentMediaId) currentInState else null
+                
                 updateState {
                     it.copy(
                         current = podcast,
@@ -313,6 +328,13 @@ class AppViewModel @Inject constructor(
                      repo.updateProgress(podcast.id, pbState.currentPosition)
                      repo.updateLastPlayed(podcast.id, System.currentTimeMillis())
                 }
+            }
+        }
+        
+        // Sleep Timer Sync
+        viewModelScope.launch {
+            playbackClient.sleepTimerSeconds.collect { seconds ->
+                updateState { it.copy(sleepTimerSeconds = seconds) }
             }
         }
     }

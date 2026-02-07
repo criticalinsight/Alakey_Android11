@@ -13,7 +13,7 @@ This document categorizes system components by their **Utility** (Business Value
 | **GlassSystem** | 🟡 High | 🔴 High | Custom "Flux" rendering engine; shaders, gestures, and glassmorphism. |
 | **RssParser** | 🟡 High | 🟠 Medium | XML parsing logic for podcast feeds; fragile by nature. |
 | **PodcastDao** | 🔴 Critical | 🟢 Low | Data access interface; clean Room abstractions. |
-| **AlakeyUI** | 🟡 High | 🟠 Medium | Optimized flattened list layout; navigation and dialog orchestration. |
+| **AlakeyUI** | 🟡 High | 🟠 Medium | Optimized flattened list layout; navigation, dialog orchestration, and the **SpotlightHero** Action Center. |
 | **FeedSyncWorker** | 🟠 Medium | 🟢 Low | Background synchronization; pure function of `Repo.syncAll()`. |
 
 ---

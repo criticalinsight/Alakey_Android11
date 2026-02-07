@@ -133,6 +133,15 @@ class ReplReceiver : BroadcastReceiver() {
                             Toast.makeText(context, "Toggle: ${it.isPlaying}", Toast.LENGTH_SHORT).show()
                         }
                     }
+                    trimmedCmd == "diagnose" -> {
+                        val runtime = Runtime.getRuntime()
+                        val usedMem = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+                        val maxMem = runtime.maxMemory() / 1024 / 1024
+                        val heapC = android.os.Debug.getNativeHeapAllocatedSize() / 1024 / 1024
+                        val msg = "Mem: $usedMem MB / $maxMem MB | Native: $heapC MB | Threads: ${Thread.activeCount()}"
+                        Log.i("REPL_DIAGNOSE", msg)
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    }
                     else -> Log.w("REPL", "Unknown command: $trimmedCmd")
                 }
             } catch (e: Exception) {

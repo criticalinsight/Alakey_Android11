@@ -30,7 +30,11 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         
         FeedSyncWorker.schedule(this)
-        WorkManager.getInstance(this).enqueue(OneTimeWorkRequestBuilder<FeedSyncWorker>().build())
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "sync_immediate",
+            androidx.work.ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<FeedSyncWorker>().build()
+        )
 
         setContent {
             MainContent()

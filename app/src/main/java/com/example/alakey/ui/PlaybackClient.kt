@@ -19,7 +19,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -85,6 +87,9 @@ class PlaybackClient @Inject constructor(
         }, MoreExecutors.directExecutor())
     }
 
+    private val _playbackEnded = kotlinx.coroutines.flow.MutableSharedFlow<Unit>()
+    val playbackEnded: kotlinx.coroutines.flow.SharedFlow<Unit> = _playbackEnded.asSharedFlow()
+
     private fun setupListener() {
         controller?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -94,7 +99,7 @@ class PlaybackClient @Inject constructor(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                     // Handle end logic if needed, or expose event
+                     scope.launch { _playbackEnded.emit(Unit) }
                 }
             }
 

@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,6 +24,7 @@ class UniversalRepository @Inject constructor(
     private val networkSystem: NetworkSystem,
     @ApplicationContext private val context: Context
 ) {
+    private val syncMutex = kotlinx.coroutines.sync.Mutex()
     private val dao get() = dbSystem.db.dao()
     private val eventLogDao get() = dbSystem.db.eventLogDao()
     private val factDao get() = dbSystem.db.factDao()
@@ -99,7 +102,8 @@ class UniversalRepository @Inject constructor(
         }
     }
 
-    suspend fun syncAll() = withContext(Dispatchers.IO) {
+    suspend fun syncAll() = syncMutex.withLock {
+        withContext(Dispatchers.IO) {
         dao.getSubscribedFeeds().forEach { url -> 
             try {
                 subscribe(url)
@@ -107,6 +111,7 @@ class UniversalRepository @Inject constructor(
                 e.printStackTrace()
             }
         }
+    }
     }
 
     suspend fun savePodcast(p: PodcastEntity) = dao.insertPodcast(p)
